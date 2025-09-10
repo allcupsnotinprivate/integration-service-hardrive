@@ -1,0 +1,37 @@
+version: "3.8"
+
+services:
+
+  integration-service:
+    build:
+      context: ../
+      dockerfile: deploy/Dockerfile
+    container_name: integration_service
+    ports:
+      - "8000:8000"
+    depends_on:
+      - database
+    environment:
+      - DIGITALSEC__EXTERNAL__POSTGRES__HOST=database
+
+  database:
+    image: postgres:17
+    container_name: database
+    restart: on-failure
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres -h database" ]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    environment:
+      - POSTGRES_USER=digitalsec_username
+      - POSTGRES_PASSWORD=digitalsec_password
+      - POSTGRES_DB=digitalsec
+    volumes:
+      - database_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+volumes:
+  database_data:
+    driver: local
