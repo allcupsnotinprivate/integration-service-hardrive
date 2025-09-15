@@ -3,7 +3,7 @@ import aioinject
 from app import infrastructure, service_layer
 from app.configs import Settings
 
-from .wrappers import PostgresDatabaseWrapper
+from .wrappers import PostgresDatabaseWrapper, RouterServiceHTTPClientWrapper
 
 container = aioinject.Container()
 
@@ -14,6 +14,7 @@ container.register(aioinject.Object(Settings()))
 container.register(
     aioinject.Singleton(PostgresDatabaseWrapper, infrastructure.APostgresDatabase),
     aioinject.Singleton(infrastructure.SchedulerManager, infrastructure.ASchedulerManager),
+    aioinject.Singleton(RouterServiceHTTPClientWrapper, infrastructure.ARouterServiceHTTPClient)
 )
 
 # service layer
