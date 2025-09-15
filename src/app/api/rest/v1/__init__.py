@@ -10,9 +10,10 @@ from .users import router as users_router
 router = APIRouter()
 router.include_router(auth_router, tags=["Auth"])
 router.include_router(users_router, tags=["Users"])
-router.include_router(documents_router, tags=["Documents"])
 router.include_router(agents_router, tags=["Agents"])
+router.include_router(documents_router, tags=["Documents"])
 router.include_router(forwarding_router, tags=["Forwarding"])
 router.include_router(routes_router, tags=["Routes"])
+
 
 __all__ = ["router"]

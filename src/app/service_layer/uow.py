@@ -4,10 +4,15 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import repositories
 from app.infrastructure import APostgresDatabase
 
 
 class AUnitOfWorkContext(abc.ABC):
+    session: AsyncSession
+
+    users: repositories.AUsersRepository
+
     @abc.abstractmethod
     async def commit(self) -> None:
         raise NotImplementedError
@@ -20,6 +25,7 @@ class AUnitOfWorkContext(abc.ABC):
 class UnitOfWorkContext(AUnitOfWorkContext):
     def __init__(self, session: AsyncSession):
         self.session = session
+        self.users = repositories.UsersRepository(self.session)
 
     async def commit(self) -> None:
         await self.session.commit()

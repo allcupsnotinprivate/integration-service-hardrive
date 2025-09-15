@@ -14,5 +14,5 @@ __all__ = [
     "DateArgs",
     "IntervalArgs",
     "ARouterServiceHTTPClient",
-    "RouterServiceHTTPClient"
+    "RouterServiceHTTPClient",
 ]

@@ -142,7 +142,7 @@ class ARouterServiceHTTPClient(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    async def aclose(self) -> None:
+    async def close(self) -> None:
         raise NotImplementedError
 
 
@@ -159,10 +159,10 @@ class RouterServiceHTTPClient(ARouterServiceHTTPClient):
     async def __aenter__(self) -> Self:
         return self
 
-    async def __aexit__(self, exc_type, exc, tb) -> None:  # type: ignore[override]
-        await self.aclose()
+    async def __aexit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, exc_tb: Any) -> None:
+        await self.close()
 
-    async def aclose(self) -> None:
+    async def close(self) -> None:
         await self._client.aclose()
 
     async def register_agent(
@@ -433,9 +433,5 @@ class RouterServiceHTTPClient(ARouterServiceHTTPClient):
         if isinstance(value, tuple):
             return [self._serialize_value(item) for item in value]
         if isinstance(value, dict):
-            return {
-                key: self._serialize_value(item)
-                for key, item in value.items()
-                if item is not None
-            }
+            return {key: self._serialize_value(item) for key, item in value.items() if item is not None}
         return value

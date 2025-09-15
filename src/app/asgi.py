@@ -17,15 +17,19 @@ from app.middlewares import RequestContextMiddleware
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     async with container:  # noqa: E117
         with container.sync_context() as ctx:
-            # database: infrastructure.APostgresDatabase = ctx.resolve(infrastructure.APostgresDatabase)
+            database: infrastructure.APostgresDatabase = ctx.resolve(infrastructure.APostgresDatabase)
             scheduler: infrastructure.ASchedulerManager = ctx.resolve(infrastructure.ASchedulerManager)  # type: ignore[type-abstract]
+            router_service_client: infrastructure.ARouterServiceHTTPClient = ctx.resolve(
+                infrastructure.ARouterServiceHTTPClient  # type: ignore[type-abstract]
+            )
 
-        # await database.startup()
+        await database.startup()
         register_tasks(scheduler)
         scheduler.start(paused=False)
         yield
         scheduler.shutdown(wait=True)
-        # await database.shutdown()
+        await router_service_client.close()
+        await database.shutdown()
 
 
 def create_application() -> FastAPI:
