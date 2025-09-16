@@ -1,14 +1,12 @@
 from datetime import datetime
 from uuid import UUID
 
-import httpx
 from aioinject import Injected
 from aioinject.ext.fastapi import inject
-from fastapi import APIRouter, Depends, HTTPException, Path, Query
-from starlette import status
+from fastapi import APIRouter, Depends, Path, Query
 
-from app.infrastructure import ARouterServiceHTTPClient
 from app.infrastructure.router_service.http.schemas import ProcessStatus
+from app.service_layer import ADataStoreService
 from app.utils.schemas import PageMeta, PaginatedResponse
 
 from ._dependencies import get_current_user
@@ -27,7 +25,6 @@ router = APIRouter()
 @router.get("/routes", response_model=PaginatedResponse[RouteRecord], status_code=200)
 @inject
 async def list_routes(
-    router_client: Injected[ARouterServiceHTTPClient] = Depends(),
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=20, ge=1, alias="perPage"),
     document_id: UUID | None = Query(default=None, alias="documentId"),
@@ -37,14 +34,15 @@ async def list_routes(
     started_to: datetime | None = Query(default=None, alias="startedTo"),
     completed_from: datetime | None = Query(default=None, alias="completedFrom"),
     completed_to: datetime | None = Query(default=None, alias="completedTo"),
+    data_store: Injected[ADataStoreService] = Depends(),
     current_user: UserSchema = Depends(get_current_user),
 ) -> PaginatedResponse[RouteRecord]:
-    response = await router_client.search_routes(
+    routes_search_result = await data_store.list_routes(
         page=page,
-        page_size=per_page,
+        per_page=per_page,
         document_id=document_id,
         sender_id=sender_id,
-        status=status_filter,
+        status_filter=status_filter,
         started_from=started_from,
         started_to=started_to,
         completed_from=completed_from,
@@ -61,13 +59,13 @@ async def list_routes(
             completed_at=item.completed_at,
             created_at=item.created_at,
         )
-        for item in response.items
+        for item in routes_search_result.items
     ]
     meta = PageMeta(
-        page=response.page_info.page,
-        per_page=response.page_info.page_size,
-        total=response.page_info.total,
-        total_pages=response.page_info.pages,
+        page=routes_search_result.meta.page,
+        per_page=routes_search_result.meta.per_page,
+        total=routes_search_result.meta.total,
+        total_pages=routes_search_result.meta.total_pages,
     )
     return PaginatedResponse(items=items, meta=meta)
 
@@ -75,17 +73,11 @@ async def list_routes(
 @router.get("/routes/{routeId}", response_model=RouteDetails, status_code=200)
 @inject
 async def retrieve_route(
-    router_client: Injected[ARouterServiceHTTPClient] = Depends(),
     route_id: UUID = Path(alias="routeId"),
+    data_store: Injected[ADataStoreService] = Depends(),
     current_user: UserSchema = Depends(get_current_user),
 ) -> RouteDetails:
-    try:
-        route = await router_client.retrieve_route(route_id=route_id)
-    except httpx.HTTPStatusError as exc:
-        raise HTTPException(status_code=exc.response.status_code, detail="Route not found") from exc
-    except httpx.HTTPError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Router service unavailable") from exc
-
+    route = await data_store.retrieve_route(route_id=route_id)
     return RouteDetails(
         id=route.id,
         status=route.status,
@@ -97,34 +89,23 @@ async def retrieve_route(
 @router.post("/routes/{routeId}/investigate", status_code=202)
 @inject
 async def trigger_manual_investigation(
-    router_client: Injected[ARouterServiceHTTPClient] = Depends(),
     route_id: UUID = Path(alias="routeId"),
     payload: RouteInvestigationRequest | None = None,
+    data_store: Injected[ADataStoreService] = Depends(),
     current_user: UserSchema = Depends(get_current_user),
 ) -> None:
     allow_recovery = payload.allow_recovery if payload else False
-    try:
-        await router_client.investigate_routing(route_id=route_id, allow_recovery=allow_recovery)
-    except httpx.HTTPStatusError as exc:
-        raise HTTPException(status_code=exc.response.status_code, detail="Unable to trigger investigation") from exc
-    except httpx.HTTPError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Router service unavailable") from exc
+    await data_store.trigger_manual_investigation(route_id=route_id, allow_recovery=allow_recovery)
 
 
 @router.get("/routes/{routeId}/results", response_model=RouteInvestigationRecord, status_code=200)
 @inject
 async def get_route_investigation(
-    router_client: Injected[ARouterServiceHTTPClient] = Depends(),
     route_id: UUID = Path(alias="routeId"),
+    data_store: Injected[ADataStoreService] = Depends(),
     current_user: UserSchema = Depends(get_current_user),
 ) -> RouteInvestigationRecord:
-    try:
-        result = await router_client.retrieve_investigation_results(route_id=route_id)
-    except httpx.HTTPStatusError as exc:
-        raise HTTPException(status_code=exc.response.status_code, detail="Investigation not found") from exc
-    except httpx.HTTPError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Router service unavailable") from exc
-
+    result = await data_store.get_route_investigation(route_id=route_id)
     forwards = [
         RouteForwardRecord(
             sender_id=forward.sender_id,

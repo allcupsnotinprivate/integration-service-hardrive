@@ -22,4 +22,5 @@ container.register(
     aioinject.Transient(service_layer.UnitOfWork, service_layer.AUnitOfWork),
     aioinject.Singleton(AuthServiceWrapper, service_layer.A_AuthService),
     aioinject.Transient(service_layer.UsersService, service_layer.AUsersService),
+    aioinject.Transient(service_layer.DataStoreService, service_layer.ADataStoreService),
 )

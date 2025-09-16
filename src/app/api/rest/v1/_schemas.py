@@ -197,6 +197,7 @@ class RouteForwardRecord(BaseAPISchema):
 
 
 class RouteInvestigationRecord(BaseAPISchema):
+    status: ProcessStatus
     forwards: list[RouteForwardRecord]
 
 

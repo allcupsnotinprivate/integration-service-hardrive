@@ -1,5 +1,19 @@
 from .aClasses import AService
 from .auth import A_AuthService, AuthService
+from .data_store import (
+    ADataStoreService,
+    AgentData,
+    DataStoreService,
+    DocumentHistoryRecord,
+    DocumentSummaryData,
+    ForwardingRecordData,
+    PaginatedResult,
+    Pagination,
+    RouteDetailsData,
+    RouteInvestigationData,
+    RouteInvestigationForwardData,
+    RouteRecordData,
+)
 from .uow import AUnitOfWork, AUnitOfWorkContext, UnitOfWork, UnitOfWorkContext
 from .users import AUsersService, UsersService
 
@@ -13,4 +27,16 @@ __all__ = [
     "AuthService",
     "AUsersService",
     "UsersService",
+    "ADataStoreService",
+    "AgentData",
+    "DataStoreService",
+    "DocumentHistoryRecord",
+    "DocumentSummaryData",
+    "ForwardingRecordData",
+    "PaginatedResult",
+    "Pagination",
+    "RouteDetailsData",
+    "RouteInvestigationData",
+    "RouteInvestigationForwardData",
+    "RouteRecordData",
 ]

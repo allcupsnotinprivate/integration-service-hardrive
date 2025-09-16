@@ -5,6 +5,7 @@ from aioinject.ext.fastapi import inject
 from fastapi import APIRouter, Depends, Query
 
 from app.infrastructure import ARouterServiceHTTPClient
+from app.service_layer import ADataStoreService
 from app.utils.schemas import PageMeta, PaginatedResponse
 
 from ._dependencies import get_current_user
@@ -16,7 +17,6 @@ router = APIRouter()
 @router.get("/forwardings", response_model=PaginatedResponse[ForwardingRecord], status_code=200)
 @inject
 async def list_forwardings(
-    router_client: Injected[ARouterServiceHTTPClient] = Depends(),
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=20, ge=1, alias="perPage"),
     document_id: UUID | None = Query(default=None, alias="documentId"),
@@ -26,11 +26,12 @@ async def list_forwardings(
     is_valid: bool | None = Query(default=None, alias="isValid"),
     is_hidden: bool | None = Query(default=None, alias="isHidden"),
     purpose: str | None = Query(default=None),
+    data_store: Injected[ADataStoreService] = Depends(),
     current_user: UserSchema = Depends(get_current_user),
 ) -> PaginatedResponse[ForwardingRecord]:
-    response = await router_client.search_forwarded(
+    forwardings_search_result = await data_store.list_forwardings(
         page=page,
-        page_size=per_page,
+        per_page=per_page,
         document_id=document_id,
         sender_id=sender_id,
         recipient_id=recipient_id,
@@ -53,13 +54,13 @@ async def list_forwardings(
             score=item.score,
             created_at=item.created_at,
         )
-        for item in response.items
+        for item in forwardings_search_result.items
     ]
     meta = PageMeta(
-        page=response.page_info.page,
-        per_page=response.page_info.page_size,
-        total=response.page_info.total,
-        total_pages=response.page_info.pages,
+        page=forwardings_search_result.meta.page,
+        per_page=forwardings_search_result.meta.per_page,
+        total=forwardings_search_result.meta.total,
+        total_pages=forwardings_search_result.meta.total_pages,
     )
     return PaginatedResponse(items=items, meta=meta)
 
@@ -68,13 +69,13 @@ async def list_forwardings(
 @inject
 async def forward_document(
     payload: ForwardDocumentRequest,
-    router_client: Injected[ARouterServiceHTTPClient] = Depends(),
+    data_store: Injected[ADataStoreService] = Depends(),
     current_user: UserSchema = Depends(get_current_user),
 ) -> ForwardCreatedResponse:
-    response = await router_client.forward_document(
+    forward_id = await data_store.forward_document(
         purpose=payload.purpose,
         sender_id=payload.sender_id,
         recipient_id=payload.recipient_id,
         document_id=payload.document_id,
     )
-    return ForwardCreatedResponse(id=response.id)
+    return ForwardCreatedResponse(id=forward_id)

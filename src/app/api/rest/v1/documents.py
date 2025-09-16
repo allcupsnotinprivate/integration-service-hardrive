@@ -10,6 +10,7 @@ from starlette.responses import JSONResponse
 
 from app.infrastructure import ARouterServiceHTTPClient
 from app.infrastructure.router_service.http.schemas import ProcessStatus
+from app.service_layer import ADataStoreService
 from app.utils.schemas import PageMeta, PaginatedResponse
 
 from ._dependencies import get_current_user
@@ -21,27 +22,29 @@ router = APIRouter()
 @router.get("/documents", response_model=PaginatedResponse[DocumentSummary], status_code=200)
 @inject
 async def search_documents(
-    router_client: Injected[ARouterServiceHTTPClient] = Depends(),
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=10, ge=1, alias="perPage"),
     name: str | None = Query(default=None),
     created_from: datetime | None = Query(default=None, alias="createdFrom"),
     created_to: datetime | None = Query(default=None, alias="createdTo"),
+    data_store: Injected[ADataStoreService] = Depends(),
     current_user: UserSchema = Depends(get_current_user),
 ) -> PaginatedResponse[DocumentSummary]:
-    response = await router_client.search_documents(
+    documents_search_result = await data_store.search_documents(
         page=page,
-        page_size=per_page,
+        per_page=per_page,
         name=name,
         created_from=created_from,
         created_to=created_to,
     )
-    items = [DocumentSummary(id=doc.id, name=doc.name, created_at=doc.created_at) for doc in response.items]
+    items = [
+        DocumentSummary(id=doc.id, name=doc.name, created_at=doc.created_at) for doc in documents_search_result.items
+    ]
     meta = PageMeta(
-        page=response.page_info.page,
-        per_page=response.page_info.page_size,
-        total=response.page_info.total,
-        total_pages=response.page_info.pages,
+        page=documents_search_result.meta.page,
+        per_page=documents_search_result.meta.per_page,
+        total=documents_search_result.meta.total,
+        total_pages=documents_search_result.meta.total_pages,
     )
     return PaginatedResponse(items=items, meta=meta)
 
@@ -50,19 +53,18 @@ async def search_documents(
 @inject
 async def admit_document(
     payload: ManualDocumentRequest,
-    router_client: Injected[ARouterServiceHTTPClient] = Depends(),
+    data_store: Injected[ADataStoreService] = Depends(),
     current_user: UserSchema = Depends(get_current_user),
 ) -> DocumentCreatedResponse:
     if not payload.name.strip() or not payload.content.strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Name and content must not be empty")
-    response = await router_client.admit_document(name=payload.name.strip(), content=payload.content)
-    return DocumentCreatedResponse(id=response.id)
+    document_id = await data_store.create_manual_document(name=payload.name, content=payload.content)
+    return DocumentCreatedResponse(id=document_id)
 
 
 @router.get("/documents/history", response_model=PaginatedResponse[DocumentHistoryItem], status_code=200)
 @inject
 async def document_history(
-    router_client: Injected[ARouterServiceHTTPClient] = Depends(),
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=10, ge=1, alias="perPage"),
     document_id: UUID | None = Query(default=None, alias="documentId"),
@@ -72,83 +74,43 @@ async def document_history(
     started_to: datetime | None = Query(default=None, alias="startedTo"),
     completed_from: datetime | None = Query(default=None, alias="completedFrom"),
     completed_to: datetime | None = Query(default=None, alias="completedTo"),
+    data_store: Injected[ADataStoreService] = Depends(),
     current_user: UserSchema = Depends(get_current_user),
 ) -> PaginatedResponse[DocumentHistoryItem]:
-    routes_response = await router_client.search_routes(
+    document_history_search_results = await data_store.get_document_history(
         page=page,
-        page_size=per_page,
+        per_page=per_page,
         document_id=document_id,
         sender_id=sender_id,
-        status=status_filter,
+        status_filter=status_filter,
         started_from=started_from,
         started_to=started_to,
         completed_from=completed_from,
         completed_to=completed_to,
     )
 
-    items: list[DocumentHistoryItem] = []
-    for route in routes_response.items:
-        first_chunk_preview: str | None = None
-        try:
-            chunks_response = await router_client.search_document_chunks(
-                page=1,
-                page_size=1,
-                document_id=route.document_id,
-            )
-            if chunks_response.items:
-                first_chunk_preview = chunks_response.items[0].content
-        except httpx.HTTPError:
-            first_chunk_preview = None
-
-        investigation_status: ProcessStatus | None = None
-        predicted_sender_id: UUID | None = None
-        predicted_recipient_id: UUID | None = None
-        prediction_confidence: float | None = None
-        try:
-            investigation = await router_client.retrieve_investigation_results(route_id=route.id)
-            investigation_status = investigation.status
-            if investigation.forwards:
-                last_forward = investigation.forwards[-1]
-                predicted_sender_id = last_forward.sender_id
-                predicted_recipient_id = last_forward.recipient_id
-                prediction_confidence = last_forward.score
-        except httpx.HTTPError:
-            investigation_status = None
-
-        duration = None
-        if route.started_at:
-            end_time = route.completed_at or datetime.now(timezone.utc)
-            duration = max((end_time - route.started_at).total_seconds(), 0.0)
-
-        # Router service does not expose document metadata by id yet, so we cannot fetch the original name.
-        document_name: str | None = None
-        document_created_at = route.created_at
-
-        items.append(
-            DocumentHistoryItem(
-                document_id=route.document_id,
-                route_id=route.id,
-                document_created_at=document_created_at,
-                route_created_at=route.created_at,
-                sender_id=route.sender_id,
-                route_status=route.status,
-                investigation_status=investigation_status,
-                document_name=document_name,
-                first_chunk_preview=first_chunk_preview,
-                predicted_sender_id=predicted_sender_id,
-                predicted_recipient_id=predicted_recipient_id,
-                prediction_confidence=prediction_confidence,
-                investigation_duration_seconds=duration,
-                manual_review_available=route.status != ProcessStatus.COMPLETED,
-                manual_review_endpoint=f"/api/v1/routes/{route.id}/investigate",
-            )
+    items = [
+        DocumentHistoryItem(
+            document_id=record.document_id,
+            route_id=record.route_id,
+            document_created_at=record.document_created_at,
+            route_created_at=record.route_created_at,
+            sender_id=record.sender_id,
+            route_status=record.route_status,
+            document_name=record.document_name,
+            first_chunk_preview=record.first_chunk_preview,
+            predicted_recipient_id=record.predicted_recipient_id,
+            prediction_confidence=record.prediction_confidence,
+            investigation_duration_seconds=record.investigation_duration_seconds,
         )
+        for record in document_history_search_results.items
+    ]
 
     meta = PageMeta(
-        page=routes_response.page_info.page,
-        per_page=routes_response.page_info.page_size,
-        total=routes_response.page_info.total,
-        total_pages=routes_response.page_info.pages,
+        page=document_history_search_results.meta.page,
+        per_page=document_history_search_results.meta.per_page,
+        total=document_history_search_results.meta.total,
+        total_pages=document_history_search_results.meta.total_pages,
     )
 
     return PaginatedResponse(items=items, meta=meta)
