@@ -11,7 +11,15 @@ from ._schemas import AgentCreatedResponse, AgentRecord, AgentRegisterRequest, U
 router = APIRouter()
 
 
-@router.get("/agents", response_model=PaginatedResponse[AgentRecord], status_code=200)
+@router.get(
+    "/agents",
+    response_model=PaginatedResponse[AgentRecord],
+    status_code=200,
+    description=(
+        "Флаг `isDefaultRecipient` означает, что агент будет предложен системой как получатель по умолчанию, "
+        "если данных для определения потенциальных адресатов недостаточно или оценки предсказанных получателей низкие."
+    ),
+)
 @inject
 async def list_agents(
     page: int = Query(default=1, ge=1),
@@ -52,7 +60,15 @@ async def list_agents(
     return PaginatedResponse(items=items, meta=meta)
 
 
-@router.post("/agents", response_model=AgentCreatedResponse, status_code=201)
+@router.post(
+    "/agents",
+    response_model=AgentCreatedResponse,
+    status_code=201,
+    description=(
+        "При регистрации можно отметить агента как `isDefaultRecipient` — такой агент будет использоваться системой "
+        "в качестве получателя по умолчанию, когда точных предсказаний сделать нельзя."
+    ),
+)
 @inject
 async def register_agent(
     payload: AgentRegisterRequest,

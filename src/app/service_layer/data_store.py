@@ -395,7 +395,7 @@ class DataStoreService(ADataStoreService):
 
             document_created_at = route.created_at
 
-            # TODO: add documents data to fields `document_created_at`, `document_name`, ``
+            # TODO: add document data for fields `document_created_at`, `document_name`
             items.append(
                 DocumentHistoryRecord(
                     document_id=route.document_id,

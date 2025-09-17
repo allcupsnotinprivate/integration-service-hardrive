@@ -387,7 +387,7 @@ class RouterServiceHTTPClient(ARouterServiceHTTPClient):
         response = await self._request(
             "POST",
             "/routes/initialize",
-            json=self._prepare_payload({"document_id": document_id, "sender_id": sender_id}),
+            json=self._prepare_payload({"documentId": document_id, "senderId": sender_id}),
         )
         return RouteDocumentOut.model_validate(response.json())
 
@@ -404,7 +404,7 @@ class RouterServiceHTTPClient(ARouterServiceHTTPClient):
             "POST",
             "/routes/investigate",
             params={"routeId": str(route_id)},
-            json=self._prepare_payload({"allow_recovery": allow_recovery}),
+            json=self._prepare_payload({"allowRecovery": allow_recovery}),
         )
 
     async def retrieve_investigation_results(self, *, route_id: UUID) -> RouteInvestigationOut:

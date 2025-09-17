@@ -11,7 +11,14 @@ from ._schemas import JWTLoginForm, JWTRefreshForm, TokenSchema, UserSchema
 router = APIRouter()
 
 
-@router.post("/auth/login", response_model=TokenSchema, status_code=201)
+@router.post(
+    "/auth/login",
+    response_model=TokenSchema,
+    status_code=201,
+    description=(
+        "В поле `username` необходимо передавать `email` пользователя; авторизация по отдельному `username` не поддерживается."
+    ),
+)
 @inject
 async def login(
     form: JWTLoginForm = Depends(),

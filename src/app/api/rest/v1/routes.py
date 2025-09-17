@@ -22,7 +22,15 @@ from ._schemas import (
 router = APIRouter()
 
 
-@router.get("/routes", response_model=PaginatedResponse[RouteRecord], status_code=200)
+@router.get(
+    "/routes",
+    response_model=PaginatedResponse[RouteRecord],
+    status_code=200,
+    description=(
+        "Один документ может иметь несколько маршрутов (`Route`) с разными отправителями. "
+        "Используйте фильтры `documentId` и `senderId`, чтобы выбрать нужную комбинацию документа и отправителя."
+    ),
+)
 @inject
 async def list_routes(
     page: int = Query(default=1, ge=1),

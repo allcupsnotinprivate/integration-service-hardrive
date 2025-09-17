@@ -13,7 +13,17 @@ from ._schemas import ForwardCreatedResponse, ForwardDocumentRequest, Forwarding
 router = APIRouter()
 
 
-@router.get("/forwardings", response_model=PaginatedResponse[ForwardingRecord], status_code=200)
+@router.get(
+    "/forwardings",
+    response_model=PaginatedResponse[ForwardingRecord],
+    status_code=200,
+    description=(
+        "Если пересылка (`Forwarding`) связана с маршрутом (`routeId`), она считается предсказанной системой. "
+        "Запись, привязанная только к документу, - добавлена вручную. Поле `isValid` пустое — требуется ручная "
+        "валидация; `True` означает, что флаг установлен вручную или что `score` превысил системный порог. "
+        "Флаг `isHidden=True` исключает запись из дальнейших предсказаний."
+    ),
+)
 @inject
 async def list_forwardings(
     page: int = Query(default=1, ge=1),
@@ -64,7 +74,15 @@ async def list_forwardings(
     return PaginatedResponse(items=items, meta=meta)
 
 
-@router.post("/forwardings", response_model=ForwardCreatedResponse, status_code=201)
+@router.post(
+    "/forwardings",
+    response_model=ForwardCreatedResponse,
+    status_code=201,
+    description=(
+        "Создаёт ручную запись пересылки, связанную только с документом. Такие записи не "
+        "привязаны к маршрутам и считаются добавленными вручную; для модерации используются флаги `isValid` и `isHidden`."
+    ),
+)
 @inject
 async def forward_document(
     payload: ForwardDocumentRequest,

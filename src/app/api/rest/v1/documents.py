@@ -17,7 +17,15 @@ from ._schemas import DocumentCreatedResponse, DocumentHistoryItem, DocumentSumm
 router = APIRouter()
 
 
-@router.get("/documents", response_model=PaginatedResponse[DocumentSummary], status_code=200)
+@router.get(
+    "/documents/history",
+    response_model=PaginatedResponse[DocumentHistoryItem],
+    status_code=200,
+    description=(
+        "История отражает связи между документами и маршрутами. "
+        "Для одного документа может существовать несколько маршрутов."
+    ),
+)
 @inject
 async def search_documents(
     page: int = Query(default=1, ge=1),
