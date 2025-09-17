@@ -15,6 +15,15 @@ class ProcessStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     TIMEOUT = "timeout"
+    CANCELLED = "cancelled"
+
+
+class AnalyticsTimeWindow(str, Enum):
+    HOUR = "1h"
+    HOURS_8 = "8h"
+    HOURS_12 = "12h"
+    DAY = "1d"
+    WEEK = "1w"
 
 
 class PageMeta(BaseSchema):
@@ -132,3 +141,96 @@ class RouteForwardedOut(BaseSchema):
 class RouteInvestigationOut(BaseSchema):
     status: ProcessStatus = Field()
     forwards: list[RouteForwardedOut] = Field(default_factory=list)
+
+
+class InventorySummaryOut(BaseSchema):
+    documents_total: int = Field(alias="documentsTotal")
+    agents_total: int = Field(alias="agentsTotal")
+    routes_total: int = Field(alias="routesTotal")
+
+
+class RoutesOverviewOut(BaseSchema):
+    total: int = Field()
+    pending: int = Field()
+    in_progress: int = Field(alias="inProgress")
+    completed: int = Field()
+    failed: int = Field()
+    timeout: int = Field()
+    completed_last_24h: int = Field(alias="completedLast24H")
+    average_completion_seconds: float | None = Field(default=None, alias="averageCompletionSeconds")
+    completion_p95_seconds: float | None = Field(default=None, alias="completionP95Seconds")
+    average_queue_seconds: float | None = Field(default=None, alias="averageQueueSeconds")
+    queue_p95_seconds: float | None = Field(default=None, alias="queueP95Seconds")
+    in_progress_average_age_seconds: float | None = Field(default=None, alias="inProgressAverageAgeSeconds")
+    pending_average_age_seconds: float | None = Field(default=None, alias="pendingAverageAgeSeconds")
+    failure_rate: float | None = Field(default=None, alias="failureRate")
+    throughput_per_hour_last_24h: float | None = Field(default=None, alias="throughputPerHourLast24H")
+
+
+class RouteBucketOut(BaseSchema):
+    bucket_start: datetime = Field(alias="bucketStart")
+    bucket_end: datetime = Field(alias="bucketEnd")
+    total: int = Field()
+    completed: int = Field()
+    in_progress: int = Field(alias="inProgress")
+    pending: int = Field()
+    failed: int = Field()
+    timeout: int = Field()
+    average_completion_seconds: float | None = Field(default=None, alias="averageCompletionSeconds")
+    average_queue_seconds: float | None = Field(default=None, alias="averageQueueSeconds")
+
+
+class RoutesSummaryOut(BaseSchema):
+    window: AnalyticsTimeWindow = Field()
+    bucket_size_seconds: int = Field(alias="bucketSizeSeconds")
+    bucket_limit: int = Field(alias="bucketLimit")
+    overview: RoutesOverviewOut = Field()
+    buckets: list[RouteBucketOut] = Field(default_factory=list)
+
+
+class ForwardedOverviewOut(BaseSchema):
+    total_predictions: int = Field(alias="totalPredictions")
+    manual_pending: int = Field(alias="manualPending")
+    auto_approved: int = Field(alias="autoApproved")
+    auto_rejected: int = Field(alias="autoRejected")
+    routes_with_predictions: int = Field(alias="routesWithPredictions")
+    routes_manual_pending: int = Field(alias="routesManualPending")
+    routes_auto_resolved: int = Field(alias="routesAutoResolved")
+    routes_with_rejections: int = Field(alias="routesWithRejections")
+    average_predictions_per_route: float | None = Field(default=None, alias="averagePredictionsPerRoute")
+    auto_resolution_ratio: float | None = Field(default=None, alias="autoResolutionRatio")
+    auto_acceptance_rate: float | None = Field(default=None, alias="autoAcceptanceRate")
+    manual_backlog_ratio: float | None = Field(default=None, alias="manualBacklogRatio")
+    routes_coverage_ratio: float | None = Field(default=None, alias="routesCoverageRatio")
+    distinct_recipients: int = Field(alias="distinctRecipients")
+    distinct_senders: int = Field(alias="distinctSenders")
+    average_score: float | None = Field(default=None, alias="averageScore")
+    manual_average_score: float | None = Field(default=None, alias="manualAverageScore")
+    accepted_average_score: float | None = Field(default=None, alias="acceptedAverageScore")
+    rejected_average_score: float | None = Field(default=None, alias="rejectedAverageScore")
+    first_forwarded_at: datetime | None = Field(default=None, alias="firstForwardedAt")
+    last_forwarded_at: datetime | None = Field(default=None, alias="lastForwardedAt")
+
+
+class ForwardedBucketOut(BaseSchema):
+    bucket_start: datetime = Field(alias="bucketStart")
+    bucket_end: datetime = Field(alias="bucketEnd")
+    total: int = Field()
+    manual_pending: int = Field(alias="manualPending")
+    auto_approved: int = Field(alias="autoApproved")
+    auto_rejected: int = Field(alias="autoRejected")
+    average_score: float | None = Field(default=None, alias="averageScore")
+
+
+class ForwardedSummaryOut(BaseSchema):
+    window: AnalyticsTimeWindow = Field()
+    bucket_size_seconds: int = Field(alias="bucketSizeSeconds")
+    bucket_limit: int = Field(alias="bucketLimit")
+    overview: ForwardedOverviewOut = Field()
+    buckets: list[ForwardedBucketOut] = Field(default_factory=list)
+
+
+class AnalyticsOverviewOut(BaseSchema):
+    inventory: InventorySummaryOut = Field()
+    routes: RoutesOverviewOut = Field()
+    forwarded: ForwardedOverviewOut = Field()

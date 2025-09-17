@@ -2,13 +2,19 @@ from uuid import UUID
 
 from aioinject import Injected
 from aioinject.ext.fastapi import inject
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
 from app.service_layer import ADataStoreService
 from app.utils.schemas import PageMeta, PaginatedResponse
 
 from ._dependencies import get_current_user
-from ._schemas import ForwardCreatedResponse, ForwardDocumentRequest, ForwardingRecord, UserSchema
+from ._schemas import (
+    ForwardCreatedResponse,
+    ForwardDocumentRequest,
+    ForwardingRecord,
+    ForwardingUpdateRequest,
+    UserSchema,
+)
 
 router = APIRouter()
 
@@ -96,3 +102,35 @@ async def forward_document(
         document_id=payload.document_id,
     )
     return ForwardCreatedResponse(id=forward_id)
+
+
+@router.patch("/forwardings/{forwardId}", response_model=ForwardingRecord, status_code=200)
+@inject
+async def update_forwarding(
+    payload: ForwardingUpdateRequest,
+    forward_id: UUID = Path(alias="forwardId"),
+    data_store: Injected[ADataStoreService] = Depends(),
+    current_user: UserSchema = Depends(get_current_user),
+) -> ForwardingRecord:
+    if payload.purpose is None and payload.is_valid is None and payload.is_hidden is None:
+        raise HTTPException(status_code=400, detail="At least one field must be provided")
+
+    record = await data_store.update_forwarding(
+        forward_id=forward_id,
+        purpose=payload.purpose,
+        is_valid=payload.is_valid,
+        is_hidden=payload.is_hidden,
+    )
+
+    return ForwardingRecord(
+        id=record.id,
+        document_id=record.document_id,
+        sender_id=record.sender_id,
+        recipient_id=record.recipient_id,
+        route_id=record.route_id,
+        purpose=record.purpose,
+        is_valid=record.is_valid,
+        is_hidden=record.is_hidden,
+        score=record.score,
+        created_at=record.created_at,
+    )

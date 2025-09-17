@@ -5,7 +5,7 @@ from typing import Literal
 from fastapi import Form
 from pydantic import EmailStr, Field
 
-from app.infrastructure.router_service.http.schemas import ProcessStatus
+from app.infrastructure.router_service.http.schemas import AnalyticsTimeWindow, ProcessStatus
 from app.models import UserRole
 from app.utils.schemas import BaseAPISchema
 
@@ -157,6 +157,12 @@ class ForwardCreatedResponse(BaseAPISchema):
     id: uuid.UUID
 
 
+class DocumentForwardingRequest(BaseAPISchema):
+    purpose: str | None = Field(default=None)
+    sender_id: uuid.UUID
+    recipient_id: uuid.UUID
+
+
 class ForwardingRecord(BaseAPISchema):
     id: uuid.UUID
     document_id: uuid.UUID
@@ -168,6 +174,12 @@ class ForwardingRecord(BaseAPISchema):
     is_hidden: bool
     score: float | None
     created_at: datetime
+
+
+class ForwardingUpdateRequest(BaseAPISchema):
+    purpose: str | None = Field(default=None)
+    is_valid: bool | None = Field(default=None)
+    is_hidden: bool | None = Field(default=None)
 
 
 # ----- Routes -----
@@ -203,3 +215,99 @@ class RouteInvestigationRecord(BaseAPISchema):
 
 class RouteInvestigationRequest(BaseAPISchema):
     allow_recovery: bool = Field(default=False, alias="allowRecovery")
+
+
+# ----- Analytics -----
+
+
+class AnalyticsInventorySummary(BaseAPISchema):
+    documents_total: int
+    agents_total: int
+    routes_total: int
+
+
+class AnalyticsRoutesOverview(BaseAPISchema):
+    total: int
+    pending: int
+    in_progress: int
+    completed: int
+    failed: int
+    timeout: int
+    completed_last_24h: int
+    average_completion_seconds: float | None = Field(default=None)
+    completion_p95_seconds: float | None = Field(default=None)
+    average_queue_seconds: float | None = Field(default=None)
+    queue_p95_seconds: float | None = Field(default=None)
+    in_progress_average_age_seconds: float | None = Field(default=None)
+    pending_average_age_seconds: float | None = Field(default=None)
+    failure_rate: float | None = Field(default=None)
+    throughput_per_hour_last_24h: float | None = Field(default=None)
+
+
+class AnalyticsRouteBucket(BaseAPISchema):
+    bucket_start: datetime
+    bucket_end: datetime
+    total: int
+    completed: int
+    in_progress: int
+    pending: int
+    failed: int
+    timeout: int
+    average_completion_seconds: float | None = Field(default=None)
+    average_queue_seconds: float | None = Field(default=None)
+
+
+class AnalyticsRoutesSummary(BaseAPISchema):
+    window: AnalyticsTimeWindow
+    bucket_size_seconds: int
+    bucket_limit: int
+    overview: AnalyticsRoutesOverview
+    buckets: list[AnalyticsRouteBucket]
+
+
+class AnalyticsForwardedOverview(BaseAPISchema):
+    total_predictions: int
+    manual_pending: int
+    auto_approved: int
+    auto_rejected: int
+    routes_with_predictions: int
+    routes_manual_pending: int
+    routes_auto_resolved: int
+    routes_with_rejections: int
+    average_predictions_per_route: float | None = Field(default=None)
+    auto_resolution_ratio: float | None = Field(default=None)
+    auto_acceptance_rate: float | None = Field(default=None)
+    manual_backlog_ratio: float | None = Field(default=None)
+    routes_coverage_ratio: float | None = Field(default=None)
+    distinct_recipients: int
+    distinct_senders: int
+    average_score: float | None = Field(default=None)
+    manual_average_score: float | None = Field(default=None)
+    accepted_average_score: float | None = Field(default=None)
+    rejected_average_score: float | None = Field(default=None)
+    first_forwarded_at: datetime | None = Field(default=None)
+    last_forwarded_at: datetime | None = Field(default=None)
+
+
+class AnalyticsForwardedBucket(BaseAPISchema):
+    bucket_start: datetime
+    bucket_end: datetime
+    total: int
+    manual_pending: int
+    auto_approved: int
+    auto_rejected: int
+    average_score: float | None = Field(default=None)
+
+
+class AnalyticsForwardedSummary(BaseAPISchema):
+    window: AnalyticsTimeWindow
+    bucket_size_seconds: int
+    bucket_limit: int
+    overview: AnalyticsForwardedOverview
+    buckets: list[AnalyticsForwardedBucket]
+
+
+class AnalyticsOverview(BaseAPISchema):
+    inventory: AnalyticsInventorySummary
+    routes: AnalyticsRoutesOverview
+    forwarded: AnalyticsForwardedOverview

@@ -3,7 +3,7 @@ from uuid import UUID
 
 from aioinject import Injected
 from aioinject.ext.fastapi import inject
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from starlette import status
 from starlette.responses import JSONResponse
 
@@ -12,7 +12,15 @@ from app.service_layer import ADataStoreService
 from app.utils.schemas import PageMeta, PaginatedResponse
 
 from ._dependencies import get_current_user
-from ._schemas import DocumentCreatedResponse, DocumentHistoryItem, DocumentSummary, ManualDocumentRequest, UserSchema
+from ._schemas import (
+    DocumentCreatedResponse,
+    DocumentForwardingRequest,
+    DocumentHistoryItem,
+    DocumentSummary,
+    ForwardCreatedResponse,
+    ManualDocumentRequest,
+    UserSchema,
+)
 
 router = APIRouter()
 
@@ -66,6 +74,23 @@ async def admit_document(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Name and content must not be empty")
     document_id = await data_store.create_manual_document(name=payload.name, content=payload.content)
     return DocumentCreatedResponse(id=document_id)
+
+
+@router.post("/documents/{documentId}/forwardings", response_model=ForwardCreatedResponse, status_code=201)
+@inject
+async def forward_document(
+    payload: DocumentForwardingRequest,
+    document_id: UUID = Path(alias="documentId"),
+    data_store: Injected[ADataStoreService] = Depends(),
+    current_user: UserSchema = Depends(get_current_user),
+) -> ForwardCreatedResponse:
+    forward_id = await data_store.forward_document(
+        purpose=payload.purpose,
+        sender_id=payload.sender_id,
+        recipient_id=payload.recipient_id,
+        document_id=document_id,
+    )
+    return ForwardCreatedResponse(id=forward_id)
 
 
 @router.get("/documents/history", response_model=PaginatedResponse[DocumentHistoryItem], status_code=200)

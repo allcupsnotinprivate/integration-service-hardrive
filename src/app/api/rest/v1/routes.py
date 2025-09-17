@@ -94,6 +94,22 @@ async def retrieve_route(
     )
 
 
+@router.post("/routes/{routeId}/cancel", response_model=RouteDetails, status_code=200)
+@inject
+async def cancel_route(
+    route_id: UUID = Path(alias="routeId"),
+    data_store: Injected[ADataStoreService] = Depends(),
+    current_user: UserSchema = Depends(get_current_user),
+) -> RouteDetails:
+    route = await data_store.cancel_route(route_id=route_id)
+    return RouteDetails(
+        id=route.id,
+        status=route.status,
+        started_at=route.started_at,
+        completed_at=route.completed_at,
+    )
+
+
 @router.post("/routes/{routeId}/investigate", status_code=202)
 @inject
 async def trigger_manual_investigation(

@@ -2,14 +2,14 @@ import abc
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from http import HTTPStatus
-from typing import Generic, NoReturn, TypeVar
+from typing import Any, Generic, NoReturn, TypeVar
 from uuid import UUID
 
 import httpx
 
 from app import exceptions
 from app.infrastructure import ARouterServiceHTTPClient
-from app.infrastructure.router_service.http.schemas import ProcessStatus
+from app.infrastructure.router_service.http.schemas import AnalyticsTimeWindow, ProcessStatus
 
 from .aClasses import AService
 
@@ -111,6 +111,107 @@ class RouteInvestigationData:
     forwards: list[RouteInvestigationForwardData]
 
 
+@dataclass(slots=True)
+class InventorySummaryData:
+    documents_total: int
+    agents_total: int
+    routes_total: int
+
+
+@dataclass(slots=True)
+class RoutesOverviewData:
+    total: int
+    pending: int
+    in_progress: int
+    completed: int
+    failed: int
+    timeout: int
+    completed_last_24h: int
+    average_completion_seconds: float | None
+    completion_p95_seconds: float | None
+    average_queue_seconds: float | None
+    queue_p95_seconds: float | None
+    in_progress_average_age_seconds: float | None
+    pending_average_age_seconds: float | None
+    failure_rate: float | None
+    throughput_per_hour_last_24h: float | None
+
+
+@dataclass(slots=True)
+class RouteBucketData:
+    bucket_start: datetime
+    bucket_end: datetime
+    total: int
+    completed: int
+    in_progress: int
+    pending: int
+    failed: int
+    timeout: int
+    average_completion_seconds: float | None
+    average_queue_seconds: float | None
+
+
+@dataclass(slots=True)
+class RoutesSummaryData:
+    window: AnalyticsTimeWindow
+    bucket_size_seconds: int
+    bucket_limit: int
+    overview: RoutesOverviewData
+    buckets: list[RouteBucketData]
+
+
+@dataclass(slots=True)
+class ForwardedOverviewData:
+    total_predictions: int
+    manual_pending: int
+    auto_approved: int
+    auto_rejected: int
+    routes_with_predictions: int
+    routes_manual_pending: int
+    routes_auto_resolved: int
+    routes_with_rejections: int
+    average_predictions_per_route: float | None
+    auto_resolution_ratio: float | None
+    auto_acceptance_rate: float | None
+    manual_backlog_ratio: float | None
+    routes_coverage_ratio: float | None
+    distinct_recipients: int
+    distinct_senders: int
+    average_score: float | None
+    manual_average_score: float | None
+    accepted_average_score: float | None
+    rejected_average_score: float | None
+    first_forwarded_at: datetime | None
+    last_forwarded_at: datetime | None
+
+
+@dataclass(slots=True)
+class ForwardedBucketData:
+    bucket_start: datetime
+    bucket_end: datetime
+    total: int
+    manual_pending: int
+    auto_approved: int
+    auto_rejected: int
+    average_score: float | None
+
+
+@dataclass(slots=True)
+class ForwardedSummaryData:
+    window: AnalyticsTimeWindow
+    bucket_size_seconds: int
+    bucket_limit: int
+    overview: ForwardedOverviewData
+    buckets: list[ForwardedBucketData]
+
+
+@dataclass(slots=True)
+class AnalyticsOverviewData:
+    inventory: InventorySummaryData
+    routes: RoutesOverviewData
+    forwarded: ForwardedOverviewData
+
+
 class ADataStoreService(AService, abc.ABC):
     @abc.abstractmethod
     async def list_agents(
@@ -195,6 +296,17 @@ class ADataStoreService(AService, abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
+    async def update_forwarding(
+        self,
+        *,
+        forward_id: UUID,
+        purpose: str | None,
+        is_valid: bool | None,
+        is_hidden: bool | None,
+    ) -> ForwardingRecordData:
+        raise NotImplementedError
+
+    @abc.abstractmethod
     async def list_routes(
         self,
         *,
@@ -215,11 +327,37 @@ class ADataStoreService(AService, abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
+    async def cancel_route(self, *, route_id: UUID) -> RouteDetailsData:
+        raise NotImplementedError
+
+    @abc.abstractmethod
     async def trigger_manual_investigation(self, *, route_id: UUID, allow_recovery: bool) -> None:
         raise NotImplementedError
 
     @abc.abstractmethod
     async def get_route_investigation(self, *, route_id: UUID) -> RouteInvestigationData:
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    async def get_analytics_overview(self) -> AnalyticsOverviewData:
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    async def get_routes_summary(
+        self,
+        *,
+        window: AnalyticsTimeWindow,
+        bucket_limit: int | None = None,
+    ) -> RoutesSummaryData:
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    async def get_forwarded_summary(
+        self,
+        *,
+        window: AnalyticsTimeWindow,
+        bucket_limit: int | None = None,
+    ) -> ForwardedSummaryData:
         raise NotImplementedError
 
 
@@ -411,7 +549,11 @@ class DataStoreService(ADataStoreService):
                     predicted_recipient_id=predicted_recipient_id,
                     prediction_confidence=prediction_confidence,
                     investigation_duration_seconds=duration,
-                    manual_review_available=route.status != ProcessStatus.COMPLETED,
+                    manual_review_available=route.status
+                    not in {
+                        ProcessStatus.COMPLETED,
+                        ProcessStatus.CANCELLED,
+                    },
                 )
             )
 
@@ -493,6 +635,40 @@ class DataStoreService(ADataStoreService):
             self._handle_http_error(exc, "Unable to forward document")
         return response.id
 
+    async def update_forwarding(
+        self,
+        *,
+        forward_id: UUID,
+        purpose: str | None,
+        is_valid: bool | None,
+        is_hidden: bool | None,
+    ) -> ForwardingRecordData:
+        if purpose is None and is_valid is None and is_hidden is None:
+            raise exceptions.ValidationError("No fields provided for update")
+
+        try:
+            result = await self._client.update_forwarded(
+                forward_id=forward_id,
+                purpose=purpose,
+                is_valid=is_valid,
+                is_hidden=is_hidden,
+            )
+        except httpx.HTTPError as exc:
+            self._handle_http_error(exc, "Unable to update forwarding")
+
+        return ForwardingRecordData(
+            id=result.id,
+            document_id=result.document_id,
+            sender_id=result.sender_id,
+            recipient_id=result.recipient_id,
+            route_id=result.route_id,
+            purpose=result.purpose,
+            is_valid=result.is_valid,
+            is_hidden=result.is_hidden,
+            score=result.score,
+            created_at=result.created_at,
+        )
+
     async def list_routes(
         self,
         *,
@@ -556,6 +732,21 @@ class DataStoreService(ADataStoreService):
             completed_at=route.completed_at,
         )
 
+    async def cancel_route(self, *, route_id: UUID) -> RouteDetailsData:
+        try:
+            route = await self._client.cancel_route(route_id=route_id)
+        except httpx.HTTPError as exc:
+            self._handle_http_error(
+                exc, "Route not found" if isinstance(exc, httpx.HTTPStatusError) else "Unable to cancel route"
+            )
+
+        return RouteDetailsData(
+            id=route.id,
+            status=route.status,
+            started_at=route.started_at,
+            completed_at=route.completed_at,
+        )
+
     async def trigger_manual_investigation(self, *, route_id: UUID, allow_recovery: bool) -> None:
         try:
             await self._client.investigate_routing(route_id=route_id, allow_recovery=allow_recovery)
@@ -582,6 +773,136 @@ class DataStoreService(ADataStoreService):
             for forward in result.forwards
         ]
         return RouteInvestigationData(status=result.status, forwards=forwards)
+
+    async def get_analytics_overview(self) -> AnalyticsOverviewData:
+        try:
+            result = await self._client.get_analytics_overview()
+        except httpx.HTTPError as exc:
+            self._handle_http_error(exc, "Unable to fetch analytics overview")
+
+        inventory = InventorySummaryData(
+            documents_total=result.inventory.documents_total,
+            agents_total=result.inventory.agents_total,
+            routes_total=result.inventory.routes_total,
+        )
+        routes_overview = self._map_routes_overview(result.routes)
+        forwarded_overview = self._map_forwarded_overview(result.forwarded)
+        return AnalyticsOverviewData(
+            inventory=inventory,
+            routes=routes_overview,
+            forwarded=forwarded_overview,
+        )
+
+    async def get_routes_summary(
+        self,
+        *,
+        window: AnalyticsTimeWindow,
+        bucket_limit: int | None = None,
+    ) -> RoutesSummaryData:
+        try:
+            result = await self._client.get_routes_summary(window=window, bucket_limit=bucket_limit)
+        except httpx.HTTPError as exc:
+            self._handle_http_error(exc, "Unable to fetch routes analytics summary")
+
+        overview = self._map_routes_overview(result.overview)
+        buckets = [self._map_route_bucket(bucket) for bucket in result.buckets]
+        return RoutesSummaryData(
+            window=result.window,
+            bucket_size_seconds=result.bucket_size_seconds,
+            bucket_limit=result.bucket_limit,
+            overview=overview,
+            buckets=buckets,
+        )
+
+    async def get_forwarded_summary(
+        self,
+        *,
+        window: AnalyticsTimeWindow,
+        bucket_limit: int | None = None,
+    ) -> ForwardedSummaryData:
+        try:
+            result = await self._client.get_forwarded_summary(window=window, bucket_limit=bucket_limit)
+        except httpx.HTTPError as exc:
+            self._handle_http_error(exc, "Unable to fetch forwarding analytics summary")
+
+        overview = self._map_forwarded_overview(result.overview)
+        buckets = [self._map_forwarded_bucket(bucket) for bucket in result.buckets]
+        return ForwardedSummaryData(
+            window=result.window,
+            bucket_size_seconds=result.bucket_size_seconds,
+            bucket_limit=result.bucket_limit,
+            overview=overview,
+            buckets=buckets,
+        )
+
+    def _map_routes_overview(self, overview: Any) -> RoutesOverviewData:
+        return RoutesOverviewData(
+            total=overview.total,
+            pending=overview.pending,
+            in_progress=overview.in_progress,
+            completed=overview.completed,
+            failed=overview.failed,
+            timeout=overview.timeout,
+            completed_last_24h=overview.completed_last_24h,
+            average_completion_seconds=overview.average_completion_seconds,
+            completion_p95_seconds=overview.completion_p95_seconds,
+            average_queue_seconds=overview.average_queue_seconds,
+            queue_p95_seconds=overview.queue_p95_seconds,
+            in_progress_average_age_seconds=overview.in_progress_average_age_seconds,
+            pending_average_age_seconds=overview.pending_average_age_seconds,
+            failure_rate=overview.failure_rate,
+            throughput_per_hour_last_24h=overview.throughput_per_hour_last_24h,
+        )
+
+    def _map_route_bucket(self, bucket: Any) -> RouteBucketData:
+        return RouteBucketData(
+            bucket_start=bucket.bucket_start,
+            bucket_end=bucket.bucket_end,
+            total=bucket.total,
+            completed=bucket.completed,
+            in_progress=bucket.in_progress,
+            pending=bucket.pending,
+            failed=bucket.failed,
+            timeout=bucket.timeout,
+            average_completion_seconds=bucket.average_completion_seconds,
+            average_queue_seconds=bucket.average_queue_seconds,
+        )
+
+    def _map_forwarded_overview(self, overview: Any) -> ForwardedOverviewData:
+        return ForwardedOverviewData(
+            total_predictions=overview.total_predictions,
+            manual_pending=overview.manual_pending,
+            auto_approved=overview.auto_approved,
+            auto_rejected=overview.auto_rejected,
+            routes_with_predictions=overview.routes_with_predictions,
+            routes_manual_pending=overview.routes_manual_pending,
+            routes_auto_resolved=overview.routes_auto_resolved,
+            routes_with_rejections=overview.routes_with_rejections,
+            average_predictions_per_route=overview.average_predictions_per_route,
+            auto_resolution_ratio=overview.auto_resolution_ratio,
+            auto_acceptance_rate=overview.auto_acceptance_rate,
+            manual_backlog_ratio=overview.manual_backlog_ratio,
+            routes_coverage_ratio=overview.routes_coverage_ratio,
+            distinct_recipients=overview.distinct_recipients,
+            distinct_senders=overview.distinct_senders,
+            average_score=overview.average_score,
+            manual_average_score=overview.manual_average_score,
+            accepted_average_score=overview.accepted_average_score,
+            rejected_average_score=overview.rejected_average_score,
+            first_forwarded_at=overview.first_forwarded_at,
+            last_forwarded_at=overview.last_forwarded_at,
+        )
+
+    def _map_forwarded_bucket(self, bucket: Any) -> ForwardedBucketData:
+        return ForwardedBucketData(
+            bucket_start=bucket.bucket_start,
+            bucket_end=bucket.bucket_end,
+            total=bucket.total,
+            manual_pending=bucket.manual_pending,
+            auto_approved=bucket.auto_approved,
+            auto_rejected=bucket.auto_rejected,
+            average_score=bucket.average_score,
+        )
 
     def _handle_http_error(self, exc: httpx.HTTPError, message: str) -> NoReturn:
         if isinstance(exc, httpx.TimeoutException):

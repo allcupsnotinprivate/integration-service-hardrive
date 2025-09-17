@@ -13,16 +13,21 @@ from tenacity import AsyncRetrying, RetryCallState, before_sleep_log, retry_if_e
 from .schemas import (
     AgentOut,
     AgentSearchResponse,
+    AnalyticsOverviewOut,
+    AnalyticsTimeWindow,
     DocumentChunkSearchResponse,
     DocumentForwardedOut,
     DocumentForwardsOut,
     DocumentOut,
     DocumentSearchResponse,
+    ForwardedRead,
     ForwardedSearchResponse,
+    ForwardedSummaryOut,
     ProcessStatus,
     RouteDocumentOut,
     RouteInvestigationOut,
     RouteSearchResponse,
+    RoutesSummaryOut,
 )
 
 RETRYABLE_STATUS_CODES = frozenset({408, 425, 429, 502, 503})
@@ -112,6 +117,17 @@ class ARouterServiceHTTPClient(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
+    async def update_forwarded(
+        self,
+        *,
+        forward_id: UUID,
+        purpose: str | None,
+        is_valid: bool | None,
+        is_hidden: bool | None,
+    ) -> ForwardedRead:
+        raise NotImplementedError
+
+    @abc.abstractmethod
     async def search_routes(
         self,
         *,
@@ -145,7 +161,33 @@ class ARouterServiceHTTPClient(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
+    async def cancel_route(self, *, route_id: UUID) -> RouteDocumentOut:
+        raise NotImplementedError
+
+    @abc.abstractmethod
     async def retrieve_investigation_results(self, *, route_id: UUID) -> RouteInvestigationOut:
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    async def get_analytics_overview(self) -> AnalyticsOverviewOut:
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    async def get_routes_summary(
+        self,
+        *,
+        window: AnalyticsTimeWindow,
+        bucket_limit: int | None = None,
+    ) -> RoutesSummaryOut:
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    async def get_forwarded_summary(
+        self,
+        *,
+        window: AnalyticsTimeWindow,
+        bucket_limit: int | None = None,
+    ) -> ForwardedSummaryOut:
         raise NotImplementedError
 
     @abc.abstractmethod
@@ -306,6 +348,28 @@ class RouterServiceHTTPClient(ARouterServiceHTTPClient):
         )
         return DocumentForwardedOut.model_validate(response.json())
 
+    async def update_forwarded(
+        self,
+        *,
+        forward_id: UUID,
+        purpose: str | None,
+        is_valid: bool | None,
+        is_hidden: bool | None,
+    ) -> ForwardedRead:
+        response = await self._request(
+            "PATCH",
+            "/intakes/documents/forwards",
+            params={"forwardId": str(forward_id)},
+            json=self._prepare_payload(
+                {
+                    "purpose": purpose,
+                    "isValid": is_valid,
+                    "isHidden": is_hidden,
+                }
+            ),
+        )
+        return ForwardedRead.model_validate(response.json())
+
     async def retrieve_document_forwards(self, *, document_id: UUID) -> DocumentForwardsOut:
         response = await self._request(
             "GET",
@@ -407,6 +471,14 @@ class RouterServiceHTTPClient(ARouterServiceHTTPClient):
             json=self._prepare_payload({"allowRecovery": allow_recovery}),
         )
 
+    async def cancel_route(self, *, route_id: UUID) -> RouteDocumentOut:
+        response = await self._request(
+            "POST",
+            "/routes/cancel",
+            params={"routeId": str(route_id)},
+        )
+        return RouteDocumentOut.model_validate(response.json())
+
     async def retrieve_investigation_results(self, *, route_id: UUID) -> RouteInvestigationOut:
         response = await self._request(
             "GET",
@@ -414,6 +486,36 @@ class RouterServiceHTTPClient(ARouterServiceHTTPClient):
             params={"routeId": str(route_id)},
         )
         return RouteInvestigationOut.model_validate(response.json())
+
+    async def get_analytics_overview(self) -> AnalyticsOverviewOut:
+        response = await self._request("GET", "/analytics/overview")
+        return AnalyticsOverviewOut.model_validate(response.json())
+
+    async def get_routes_summary(
+        self,
+        *,
+        window: AnalyticsTimeWindow,
+        bucket_limit: int | None = None,
+    ) -> RoutesSummaryOut:
+        response = await self._request(
+            "GET",
+            "/analytics/routes/summary",
+            params=self._prepare_payload({"window": window, "bucketLimit": bucket_limit}),
+        )
+        return RoutesSummaryOut.model_validate(response.json())
+
+    async def get_forwarded_summary(
+        self,
+        *,
+        window: AnalyticsTimeWindow,
+        bucket_limit: int | None = None,
+    ) -> ForwardedSummaryOut:
+        response = await self._request(
+            "GET",
+            "/analytics/routes/predictions",
+            params=self._prepare_payload({"window": window, "bucketLimit": bucket_limit}),
+        )
+        return ForwardedSummaryOut.model_validate(response.json())
 
     async def _request(
         self,
@@ -441,6 +543,8 @@ class RouterServiceHTTPClient(ARouterServiceHTTPClient):
 
     def _serialize_value(self, value: Any) -> Any:
         if isinstance(value, ProcessStatus):
+            return value.value
+        if isinstance(value, AnalyticsTimeWindow):
             return value.value
         if isinstance(value, UUID):
             return str(value)
