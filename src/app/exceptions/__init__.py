@@ -14,6 +14,7 @@ from .exceptions import (
     PermissionDeniedError,
     ServiceError,
     TimeoutServiceError,
+    UnauthorizedError,
     ValidationError,
 )
 
@@ -34,4 +35,5 @@ __all__ = [
     "ConfigurationError",
     "DependencyUnavailableError",
     "ErrorCommand",
+    "UnauthorizedError",
 ]

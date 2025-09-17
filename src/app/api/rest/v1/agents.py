@@ -18,7 +18,7 @@ async def list_agents(
     per_page: int = Query(default=20, ge=1, alias="perPage"),
     name: str | None = Query(default=None),
     description: str | None = Query(default=None),
-    is_active: bool | None = Query(default=None),
+    is_active: bool | None = Query(default=None, alias="isActive"),
     is_default_recipient: bool | None = Query(default=None, alias="isDefaultRecipient"),
     data_store: Injected[ADataStoreService] = Depends(),
     current_user: UserSchema = Depends(get_current_user),

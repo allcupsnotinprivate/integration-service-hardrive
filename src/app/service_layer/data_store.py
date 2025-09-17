@@ -395,6 +395,7 @@ class DataStoreService(ADataStoreService):
 
             document_created_at = route.created_at
 
+            # TODO: add documents data to fields `document_created_at`, `document_name`, ``
             items.append(
                 DocumentHistoryRecord(
                     document_id=route.document_id,
@@ -544,7 +545,9 @@ class DataStoreService(ADataStoreService):
         try:
             route = await self._client.retrieve_route(route_id=route_id)
         except httpx.HTTPError as exc:
-            self._handle_http_error(exc, "Route not found" if isinstance(exc, httpx.HTTPStatusError) else "Unable to retrieve route")
+            self._handle_http_error(
+                exc, "Route not found" if isinstance(exc, httpx.HTTPStatusError) else "Unable to retrieve route"
+            )
 
         return RouteDetailsData(
             id=route.id,
@@ -563,7 +566,12 @@ class DataStoreService(ADataStoreService):
         try:
             result = await self._client.retrieve_investigation_results(route_id=route_id)
         except httpx.HTTPError as exc:
-            self._handle_http_error(exc, "Investigation not found" if isinstance(exc, httpx.HTTPStatusError) else "Unable to fetch investigation results")
+            self._handle_http_error(
+                exc,
+                "Investigation not found"
+                if isinstance(exc, httpx.HTTPStatusError)
+                else "Unable to fetch investigation results",
+            )
 
         forwards = [
             RouteInvestigationForwardData(

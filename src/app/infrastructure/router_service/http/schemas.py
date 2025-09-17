@@ -31,7 +31,7 @@ class DocumentOut(BaseSchema):
 class DocumentRead(BaseSchema):
     id: UUID = Field()
     name: str | None = Field(default=None)
-    created_at: datetime = Field()
+    created_at: datetime = Field(alias="createdAt")
 
 
 class DocumentSearchResponse(BaseSchema):
@@ -44,7 +44,7 @@ class DocumentChunkRead(BaseSchema):
     document_id: UUID = Field(alias="documentId")
     parent_id: UUID | None = Field(default=None, alias="parentId")
     content: str = Field()
-    created_at: datetime = Field()
+    created_at: datetime = Field(alias="createdAt")
 
 
 class DocumentChunkSearchResponse(BaseSchema):
@@ -60,9 +60,9 @@ class AgentRead(BaseSchema):
     id: UUID = Field()
     name: str = Field()
     description: str | None = Field(default=None)
-    is_active: bool = Field()
-    is_default_recipient: bool = Field()
-    created_at: datetime = Field()
+    is_active: bool = Field(alias="isActive")
+    is_default_recipient: bool = Field(alias="isDefaultRecipient")
+    created_at: datetime = Field(alias="createdAt")
 
 
 class AgentSearchResponse(BaseSchema):
@@ -84,7 +84,7 @@ class ForwardedRead(BaseSchema):
     is_valid: bool | None = Field(default=None, alias="isValid")
     is_hidden: bool = Field(alias="isHidden")
     score: float | None = Field(default=None)
-    created_at: datetime = Field()
+    created_at: datetime = Field(alias="createdAt")
 
 
 class ForwardedSearchResponse(BaseSchema):
@@ -93,8 +93,8 @@ class ForwardedSearchResponse(BaseSchema):
 
 
 class DocumentForward(BaseSchema):
-    sender_id: UUID = Field()
-    recipient_ids: list[UUID] = Field()
+    sender_id: UUID = Field(alias="senderId")
+    recipient_ids: list[UUID] = Field(alias="recipientIds")
 
 
 class DocumentForwardsOut(BaseSchema):
@@ -119,13 +119,13 @@ class RouteSearchResponse(BaseSchema):
 class RouteDocumentOut(BaseSchema):
     id: UUID = Field()
     status: ProcessStatus = Field()
-    started_at: datetime | None = Field(default=None)
-    completed_at: datetime | None = Field(default=None)
+    started_at: datetime | None = Field(default=None, alias="startedAt")
+    completed_at: datetime | None = Field(default=None, alias="completedAt")
 
 
 class RouteForwardedOut(BaseSchema):
-    sender_id: UUID | None = Field(default=None)
-    recipient_id: UUID | None = Field(default=None)
+    sender_id: UUID | None = Field(default=None, alias="senderId")
+    recipient_id: UUID | None = Field(default=None, alias="recipientId")
     score: float | None = Field(default=None)
 
 

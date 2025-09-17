@@ -4,9 +4,10 @@ from typing import AsyncIterator
 from aioinject.ext.fastapi import AioInjectMiddleware
 from fastapi import FastAPI
 
-from app import infrastructure
+from app import infrastructure, service_layer
 from app.api import add_exception_handlers, register_tasks
 from app.api import router as root_router
+from app.bootstrap import run_bootstrap
 from app.configs import Settings
 from app.container import container
 from app.logs import configure_logger
@@ -22,8 +23,11 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             router_service_client: infrastructure.ARouterServiceHTTPClient = ctx.resolve(
                 infrastructure.ARouterServiceHTTPClient  # type: ignore[type-abstract]
             )
+            settings: Settings = ctx.resolve(Settings)
+            users_service: service_layer.AUsersService = ctx.resolve(service_layer.AUsersService)  # type: ignore[type-abstract]
 
         await database.startup()
+        await run_bootstrap(settings=settings, users_service=users_service)
         register_tasks(scheduler)
         scheduler.start(paused=False)
         yield

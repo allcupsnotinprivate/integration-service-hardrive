@@ -20,7 +20,15 @@ class PostgresDatabaseWrapper(PostgresDatabase):
 class RouterServiceHTTPClientWrapper(RouterServiceHTTPClient):
     def __init__(self, settings: Settings):
         section = settings.external.router_service
-        super().__init__(base_url=section.url, timeout=section.timeout)  # type: ignore[arg-type]
+        super().__init__(
+            base_url=section.url,  # type: ignore[arg-type]
+            timeout=section.timeout,
+            retry_attempts=section.retry.attempts,
+            retry_backoff_initial=section.retry.wait_initial,
+            retry_backoff_max=section.retry.wait_max,
+            retry_backoff_multiplier=section.retry.wait_multiplier,
+            retry_jitter=section.retry.jitter,
+        )
 
 
 class AuthServiceWrapper(AuthService):

@@ -41,8 +41,17 @@ def add_exception_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(exceptions.PermissionDeniedError)
-    async def permission_denied_error_handler(request: Request, exc: exceptions.OperationNotAllowedError) -> JSONResponse:
+    async def permission_denied_error_handler(
+        request: Request, exc: exceptions.OperationNotAllowedError
+    ) -> JSONResponse:
         return JSONResponse(
             status_code=403,
             content={"error": "PermissionDeniedError", "message": str(exc)},
+        )
+
+    @app.exception_handler(exceptions.UnauthorizedError)
+    async def unauthorized_error_handler(request: Request, exc: exceptions.UnauthorizedError) -> JSONResponse:
+        return JSONResponse(
+            status_code=401,
+            content={"error": "UnauthorizedError", "message": str(exc)},
         )

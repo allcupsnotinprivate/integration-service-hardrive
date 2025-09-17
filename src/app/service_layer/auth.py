@@ -128,7 +128,7 @@ class AuthService(A_AuthService):
     async def get_user_by_access_token(self, access_token: str) -> User:
         record = await self._get_valid_token_record(access_token, self._access_tokens)
         if record is None:
-            raise exceptions.PermissionDeniedError("Access token is invalid or expired")
+            raise exceptions.UnauthorizedError("Access token is invalid or expired")
         async with self.uow as uow_ctx:
             user = await uow_ctx.users.get(record.user_id)
         if user is None or not user.is_active:

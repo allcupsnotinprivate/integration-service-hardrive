@@ -1,9 +1,14 @@
 import abc
-from datetime import datetime
+import logging
+import random
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any, Self
 from uuid import UUID
 
 import httpx
+from loguru import logger
+from tenacity import AsyncRetrying, RetryCallState, before_sleep_log, retry_if_exception, stop_after_attempt
 
 from .schemas import (
     AgentOut,
@@ -19,6 +24,8 @@ from .schemas import (
     RouteInvestigationOut,
     RouteSearchResponse,
 )
+
+RETRYABLE_STATUS_CODES = frozenset({408, 425, 429, 502, 503})
 
 
 class ARouterServiceHTTPClient(abc.ABC):
@@ -151,10 +158,20 @@ class RouterServiceHTTPClient(ARouterServiceHTTPClient):
         self,
         base_url: str,
         *,
+        retry_attempts: int = 3,
+        retry_backoff_initial: float = 0.5,
+        retry_backoff_max: float = 10.0,
+        retry_backoff_multiplier: float = 2.0,
+        retry_jitter: float = 0.1,
         timeout: httpx.Timeout | float | None = None,
     ) -> None:
-        self._base_url = base_url.rstrip("/")
+        self._base_url = f"{base_url.rstrip('/')}/api/v1"
         self._client = httpx.AsyncClient(base_url=self._base_url, timeout=timeout)
+        self._retry_attempts = max(1, int(retry_attempts))
+        self._retry_backoff_initial = max(0.0, float(retry_backoff_initial))
+        self._retry_backoff_max = max(self._retry_backoff_initial, float(retry_backoff_max))
+        self._retry_backoff_multiplier = max(1.0, float(retry_backoff_multiplier))
+        self._retry_jitter = max(0.0, float(retry_jitter))
 
     async def __aenter__(self) -> Self:
         return self
@@ -179,7 +196,7 @@ class RouterServiceHTTPClient(ARouterServiceHTTPClient):
                 {
                     "name": name,
                     "description": description,
-                    "is_default_recipient": is_default_recipient,
+                    "isDefaultRecipient": is_default_recipient,
                 }
             ),
         )
@@ -204,8 +221,8 @@ class RouterServiceHTTPClient(ARouterServiceHTTPClient):
                     "pageSize": page_size,
                     "name": name,
                     "description": description,
-                    "is_active": is_active,
-                    "is_default_recipient": is_default_recipient,
+                    "isActive": is_active,
+                    "isDefaultRecipient": is_default_recipient,
                 }
             ),
         )
@@ -281,9 +298,9 @@ class RouterServiceHTTPClient(ARouterServiceHTTPClient):
             json=self._prepare_payload(
                 {
                     "purpose": purpose,
-                    "sender_id": sender_id,
-                    "recipient_id": recipient_id,
-                    "document_id": document_id,
+                    "senderId": sender_id,
+                    "recipientId": recipient_id,
+                    "documentId": document_id,
                 }
             ),
         )
@@ -407,14 +424,17 @@ class RouterServiceHTTPClient(ARouterServiceHTTPClient):
         json: dict[str, Any] | None = None,
     ) -> httpx.Response:
         url = f"{self._base_url}{path}"
-        response = await self._client.request(
-            method,
-            url,
-            params=params,
-            json=json,
-        )
-        response.raise_for_status()
-        return response
+        async for attempt in self._retrying():
+            with attempt:
+                response = await self._client.request(
+                    method,
+                    url,
+                    params=params,
+                    json=json,
+                )
+                response.raise_for_status()
+                return response
+        raise RuntimeError("RouterServiceHTTPClient retry loop exited unexpectedly")
 
     def _prepare_payload(self, data: dict[str, Any]) -> dict[str, Any]:
         return {key: self._serialize_value(value) for key, value in data.items() if value is not None}
@@ -435,3 +455,62 @@ class RouterServiceHTTPClient(ARouterServiceHTTPClient):
         if isinstance(value, dict):
             return {key: self._serialize_value(item) for key, item in value.items() if item is not None}
         return value
+
+    def _retrying(self) -> AsyncRetrying:
+        return AsyncRetrying(
+            reraise=True,
+            stop=stop_after_attempt(self._retry_attempts),
+            retry=retry_if_exception(self._is_retryable_exception),
+            wait=self._compute_retry_wait,
+            before_sleep=before_sleep_log(logger, logging.WARNING),  # type: ignore[arg-type]
+        )
+
+    @staticmethod
+    def _is_retryable_exception(exception: BaseException) -> bool:
+        if isinstance(exception, httpx.HTTPStatusError):
+            status_code = exception.response.status_code
+            return status_code >= 500 or status_code in RETRYABLE_STATUS_CODES
+        if isinstance(exception, httpx.RequestError):
+            return True
+        return False
+
+    def _compute_retry_wait(self, retry_state: RetryCallState) -> float:
+        attempt = max(1, retry_state.attempt_number)
+        base_wait = self._retry_backoff_initial * (self._retry_backoff_multiplier ** (attempt - 1))
+        base_wait = min(base_wait, self._retry_backoff_max)
+        if self._retry_jitter:
+            jitter_upper_bound = base_wait * self._retry_jitter
+            base_wait = min(base_wait + random.uniform(0.0, jitter_upper_bound), self._retry_backoff_max)  # nosec B311: not used for security
+        exception = retry_state.outcome.exception() if retry_state.outcome else None
+        retry_after = self._extract_retry_after(exception)
+        if retry_after is not None:
+            base_wait = max(base_wait, retry_after)
+        return base_wait
+
+    @staticmethod
+    def _extract_retry_after(exception: BaseException | None) -> float | None:
+        if not isinstance(exception, httpx.HTTPStatusError):
+            return None
+        header_value = exception.response.headers.get("Retry-After")
+        if header_value is None:
+            return None
+        return RouterServiceHTTPClient._parse_retry_after(header_value)
+
+    @staticmethod
+    def _parse_retry_after(value: str) -> float | None:
+        stripped = value.strip()
+        if not stripped:
+            return None
+        try:
+            seconds = float(stripped)
+        except ValueError:
+            try:
+                retry_at = parsedate_to_datetime(stripped)
+            except (TypeError, ValueError):
+                return None
+            if retry_at is None:
+                return None
+            if retry_at.tzinfo is None:
+                retry_at = retry_at.replace(tzinfo=timezone.utc)
+            seconds = (retry_at - datetime.now(timezone.utc)).total_seconds()
+        return max(0.0, seconds)

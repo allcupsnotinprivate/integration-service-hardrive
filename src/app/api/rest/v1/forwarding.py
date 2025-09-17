@@ -4,7 +4,6 @@ from aioinject import Injected
 from aioinject.ext.fastapi import inject
 from fastapi import APIRouter, Depends, Query
 
-from app.infrastructure import ARouterServiceHTTPClient
 from app.service_layer import ADataStoreService
 from app.utils.schemas import PageMeta, PaginatedResponse
 

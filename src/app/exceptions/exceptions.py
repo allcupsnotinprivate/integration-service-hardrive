@@ -57,6 +57,12 @@ class PermissionDeniedError(BusinessLogicError):
     ...
 
 
+class UnauthorizedError(BusinessLogicError):
+    """Authorization error."""
+
+    ...
+
+
 class OperationNotAllowedError(BusinessLogicError):
     """Error when operation is not allowed in current state."""
 
