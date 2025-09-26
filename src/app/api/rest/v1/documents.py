@@ -26,8 +26,8 @@ router = APIRouter()
 
 
 @router.get(
-    "/documents/history",
-    response_model=PaginatedResponse[DocumentHistoryItem],
+    "/documents/search",
+    response_model=PaginatedResponse[DocumentSummary],
     status_code=200,
     description=(
         "История отражает связи между документами и маршрутами. "
