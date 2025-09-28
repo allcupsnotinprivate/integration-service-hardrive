@@ -51,6 +51,7 @@ class ARouterServiceHTTPClient(abc.ABC):
         page: int = 1,
         page_size: int = 20,
         name: str | None = None,
+        ids: list[UUID] | None = None,
         description: str | None = None,
         is_active: bool | None = None,
         is_default_recipient: bool | None = None,
@@ -169,7 +170,14 @@ class ARouterServiceHTTPClient(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    async def get_analytics_overview(self) -> AnalyticsOverviewOut:
+    async def get_analytics_overview(
+        self,
+        *,
+        time_from: datetime | None = None,
+        time_to: datetime | None = None,
+        sender_id: UUID | None = None,
+        recipient_id: UUID | None = None,
+    ) -> AnalyticsOverviewOut:
         raise NotImplementedError
 
     @abc.abstractmethod
@@ -178,6 +186,10 @@ class ARouterServiceHTTPClient(abc.ABC):
         *,
         window: AnalyticsTimeWindow,
         bucket_limit: int | None = None,
+        time_from: datetime | None = None,
+        time_to: datetime | None = None,
+        sender_id: UUID | None = None,
+        recipient_id: UUID | None = None,
     ) -> RoutesSummaryOut:
         raise NotImplementedError
 
@@ -187,6 +199,10 @@ class ARouterServiceHTTPClient(abc.ABC):
         *,
         window: AnalyticsTimeWindow,
         bucket_limit: int | None = None,
+        time_from: datetime | None = None,
+        time_to: datetime | None = None,
+        sender_id: UUID | None = None,
+        recipient_id: UUID | None = None,
     ) -> ForwardedSummaryOut:
         raise NotImplementedError
 
@@ -250,6 +266,7 @@ class RouterServiceHTTPClient(ARouterServiceHTTPClient):
         page: int = 1,
         page_size: int = 20,
         name: str | None = None,
+        ids: list[UUID] | None = None,
         description: str | None = None,
         is_active: bool | None = None,
         is_default_recipient: bool | None = None,
@@ -261,6 +278,7 @@ class RouterServiceHTTPClient(ARouterServiceHTTPClient):
                 {
                     "page": page,
                     "pageSize": page_size,
+                    "ids": ids,
                     "name": name,
                     "description": description,
                     "isActive": is_active,
@@ -487,8 +505,21 @@ class RouterServiceHTTPClient(ARouterServiceHTTPClient):
         )
         return RouteInvestigationOut.model_validate(response.json())
 
-    async def get_analytics_overview(self) -> AnalyticsOverviewOut:
-        response = await self._request("GET", "/analytics/overview")
+    async def get_analytics_overview(
+        self,
+        *,
+        time_from: datetime | None = None,
+        time_to: datetime | None = None,
+        sender_id: UUID | None = None,
+        recipient_id: UUID | None = None,
+    ) -> AnalyticsOverviewOut:
+        response = await self._request(
+            "GET",
+            "/analytics/overview",
+            params=self._prepare_payload(
+                {"timeFrom": time_from, "timeTo": time_to, "senderId": sender_id, "recipientId": recipient_id}
+            ),
+        )
         return AnalyticsOverviewOut.model_validate(response.json())
 
     async def get_routes_summary(
@@ -496,11 +527,15 @@ class RouterServiceHTTPClient(ARouterServiceHTTPClient):
         *,
         window: AnalyticsTimeWindow,
         bucket_limit: int | None = None,
+        time_from: datetime | None = None,
+        time_to: datetime | None = None,
+        sender_id: UUID | None = None,
+        recipient_id: UUID | None = None,
     ) -> RoutesSummaryOut:
         response = await self._request(
             "GET",
             "/analytics/routes/summary",
-            params=self._prepare_payload({"window": window, "bucketLimit": bucket_limit}),
+            params=self._prepare_payload({"window": window, "bucketLimit": bucket_limit, "timeFrom": time_from, "timeTo": time_to, "senderId": sender_id, "recipientId": recipient_id}),
         )
         return RoutesSummaryOut.model_validate(response.json())
 
@@ -509,11 +544,15 @@ class RouterServiceHTTPClient(ARouterServiceHTTPClient):
         *,
         window: AnalyticsTimeWindow,
         bucket_limit: int | None = None,
+        time_from: datetime | None = None,
+        time_to: datetime | None = None,
+        sender_id: UUID | None = None,
+        recipient_id: UUID | None = None,
     ) -> ForwardedSummaryOut:
         response = await self._request(
             "GET",
             "/analytics/routes/predictions",
-            params=self._prepare_payload({"window": window, "bucketLimit": bucket_limit}),
+            params=self._prepare_payload({"window": window, "bucketLimit": bucket_limit, "timeFrom": time_from, "timeTo": time_to, "senderId": sender_id, "recipientId": recipient_id}),
         )
         return ForwardedSummaryOut.model_validate(response.json())
 

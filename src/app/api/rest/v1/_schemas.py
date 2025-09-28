@@ -134,11 +134,13 @@ class DocumentHistoryItem(BaseAPISchema):
     document_created_at: datetime | None = None
     route_created_at: datetime
     sender_id: uuid.UUID | None = None
+    sender_name: str | None = None
     route_status: ProcessStatus
     file_url: str | None = None  # Router service currently does not provide file download links
     document_name: str | None = None
     first_chunk_preview: str | None = None
-    predicted_recipient_id: uuid.UUID | None = None
+    recipient_id: uuid.UUID | None = None
+    recipient_name: str | None = None
     prediction_confidence: float | None = None
     investigation_duration_seconds: float | None = None
 
@@ -265,6 +267,13 @@ class AnalyticsRoutesSummary(BaseAPISchema):
     buckets: list[AnalyticsRouteBucket]
 
 
+class ForwardedRecipientDistributionResponse(BaseAPISchema):
+    recipient_id: uuid.UUID | None = None
+    recipient_name: str | None = None
+    routes: int
+    percentage: float
+
+
 class AnalyticsForwardedOverview(BaseAPISchema):
     total_predictions: int
     manual_pending: int
@@ -279,6 +288,7 @@ class AnalyticsForwardedOverview(BaseAPISchema):
     auto_acceptance_rate: float | None = Field(default=None)
     manual_backlog_ratio: float | None = Field(default=None)
     routes_coverage_ratio: float | None = Field(default=None)
+    rejection_ratio: float | None = Field(default=None)
     distinct_recipients: int
     distinct_senders: int
     average_score: float | None = Field(default=None)
@@ -287,6 +297,7 @@ class AnalyticsForwardedOverview(BaseAPISchema):
     rejected_average_score: float | None = Field(default=None)
     first_forwarded_at: datetime | None = Field(default=None)
     last_forwarded_at: datetime | None = Field(default=None)
+    routes_distribution: list[ForwardedRecipientDistributionResponse] = Field(default_factory=list)
 
 
 class AnalyticsForwardedBucket(BaseAPISchema):

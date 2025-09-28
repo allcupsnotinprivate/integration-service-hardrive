@@ -127,10 +127,12 @@ async def document_history(
             document_created_at=record.document_created_at,
             route_created_at=record.route_created_at,
             sender_id=record.sender_id,
+            sender_name=record.sender_name,
             route_status=record.route_status,
             document_name=record.document_name,
             first_chunk_preview=record.first_chunk_preview,
-            predicted_recipient_id=record.predicted_recipient_id,
+            recipient_id=record.recipient_id,
+            recipient_name=record.recipient_name,
             prediction_confidence=record.prediction_confidence,
             investigation_duration_seconds=record.investigation_duration_seconds,
         )

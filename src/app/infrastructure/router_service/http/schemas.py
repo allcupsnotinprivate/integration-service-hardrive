@@ -188,6 +188,13 @@ class RoutesSummaryOut(BaseSchema):
     buckets: list[RouteBucketOut] = Field(default_factory=list)
 
 
+class ForwardedRecipientDistributionResponse(BaseSchema):
+    recipient_id: UUID | None = Field(default=None, alias="recipientId")
+    recipient_name: str | None = Field(default=None, alias="recipientName")
+    routes: int = Field(default=-1)
+    percentage: float = Field(default=0)
+
+
 class ForwardedOverviewOut(BaseSchema):
     total_predictions: int = Field(alias="totalPredictions")
     manual_pending: int = Field(alias="manualPending")
@@ -202,6 +209,7 @@ class ForwardedOverviewOut(BaseSchema):
     auto_acceptance_rate: float | None = Field(default=None, alias="autoAcceptanceRate")
     manual_backlog_ratio: float | None = Field(default=None, alias="manualBacklogRatio")
     routes_coverage_ratio: float | None = Field(default=None, alias="routesCoverageRatio")
+    rejection_ratio: float | None = Field(default=None, alias="rejectionRatio")
     distinct_recipients: int = Field(alias="distinctRecipients")
     distinct_senders: int = Field(alias="distinctSenders")
     average_score: float | None = Field(default=None, alias="averageScore")
@@ -210,6 +218,7 @@ class ForwardedOverviewOut(BaseSchema):
     rejected_average_score: float | None = Field(default=None, alias="rejectedAverageScore")
     first_forwarded_at: datetime | None = Field(default=None, alias="firstForwardedAt")
     last_forwarded_at: datetime | None = Field(default=None, alias="lastForwardedAt")
+    routes_distribution: list[ForwardedRecipientDistributionResponse] = Field(default_factory=list)
 
 
 class ForwardedBucketOut(BaseSchema):

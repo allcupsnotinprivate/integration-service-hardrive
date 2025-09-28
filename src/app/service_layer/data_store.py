@@ -54,12 +54,13 @@ class DocumentHistoryRecord:
     document_created_at: datetime | None
     route_created_at: datetime
     sender_id: UUID | None
+    sender_name: str | None
     route_status: ProcessStatus
     investigation_status: ProcessStatus | None
     document_name: str | None
     first_chunk_preview: str | None
-    predicted_sender_id: UUID | None
-    predicted_recipient_id: UUID | None
+    recipient_id: UUID | None
+    recipient_name: str | None
     prediction_confidence: float | None
     investigation_duration_seconds: float | None
     manual_review_available: bool
@@ -175,6 +176,7 @@ class ForwardedOverviewData:
     auto_acceptance_rate: float | None
     manual_backlog_ratio: float | None
     routes_coverage_ratio: float | None
+    rejection_ratio: float | None
     distinct_recipients: int
     distinct_senders: int
     average_score: float | None
@@ -183,6 +185,7 @@ class ForwardedOverviewData:
     rejected_average_score: float | None
     first_forwarded_at: datetime | None
     last_forwarded_at: datetime | None
+    routes_distribution: list[dict[str, Any]]
 
 
 @dataclass(slots=True)
@@ -339,7 +342,14 @@ class ADataStoreService(AService, abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    async def get_analytics_overview(self) -> AnalyticsOverviewData:
+    async def get_analytics_overview(
+        self,
+        *,
+        time_from: datetime | None = None,
+        time_to: datetime | None = None,
+        sender_id: UUID | None = None,
+        recipient_id: UUID | None = None,
+    ) -> AnalyticsOverviewData:
         raise NotImplementedError
 
     @abc.abstractmethod
@@ -348,6 +358,10 @@ class ADataStoreService(AService, abc.ABC):
         *,
         window: AnalyticsTimeWindow,
         bucket_limit: int | None = None,
+        time_from: datetime | None = None,
+        time_to: datetime | None = None,
+        sender_id: UUID | None = None,
+        recipient_id: UUID | None = None,
     ) -> RoutesSummaryData:
         raise NotImplementedError
 
@@ -357,6 +371,10 @@ class ADataStoreService(AService, abc.ABC):
         *,
         window: AnalyticsTimeWindow,
         bucket_limit: int | None = None,
+        time_from: datetime | None = None,
+        time_to: datetime | None = None,
+        sender_id: UUID | None = None,
+        recipient_id: UUID | None = None,
     ) -> ForwardedSummaryData:
         raise NotImplementedError
 
@@ -497,7 +515,9 @@ class DataStoreService(ADataStoreService):
         except httpx.HTTPError as exc:
             self._handle_http_error(exc, "Unable to fetch document history")
 
-        items: list[DocumentHistoryRecord] = []
+        raw_records: list[dict[str, Any]] = []
+        agent_ids: set[UUID] = set()
+
         for route in routes_response.items:
             first_chunk_preview: str | None = None
             try:
@@ -533,27 +553,70 @@ class DataStoreService(ADataStoreService):
 
             document_created_at = route.created_at
 
-            # TODO: add document data for fields `document_created_at`, `document_name`
-            items.append(
-                DocumentHistoryRecord(
-                    document_id=route.document_id,
-                    route_id=route.id,
-                    document_created_at=document_created_at,
-                    route_created_at=route.created_at,
-                    sender_id=route.sender_id,
-                    route_status=route.status,
-                    investigation_status=investigation_status,
-                    document_name=None,
-                    first_chunk_preview=first_chunk_preview,
-                    predicted_sender_id=predicted_sender_id,
-                    predicted_recipient_id=predicted_recipient_id,
-                    prediction_confidence=prediction_confidence,
-                    investigation_duration_seconds=duration,
-                    manual_review_available=route.status
+            if route.sender_id:
+                agent_ids.add(route.sender_id)
+            if predicted_sender_id:
+                agent_ids.add(predicted_sender_id)
+            if predicted_recipient_id:
+                agent_ids.add(predicted_recipient_id)
+
+            raw_records.append(
+                {
+                    "document_id": route.document_id,
+                    "route_id": route.id,
+                    "document_created_at": document_created_at,
+                    "route_created_at": route.created_at,
+                    "sender_id": route.sender_id,
+                    "route_status": route.status,
+                    "investigation_status": investigation_status,
+                    "document_name": None,
+                    "first_chunk_preview": first_chunk_preview,
+                    "predicted_sender_id": predicted_sender_id,
+                    "predicted_recipient_id": predicted_recipient_id,
+                    "prediction_confidence": prediction_confidence,
+                    "investigation_duration_seconds": duration,
+                    "manual_review_available": route.status
                     not in {
                         ProcessStatus.COMPLETED,
                         ProcessStatus.CANCELLED,
                     },
+                }
+            )
+
+        agent_names = await self._fetch_agent_names(list(agent_ids))
+        items: list[DocumentHistoryRecord] = []
+        for record in raw_records:
+            sender_id = record["sender_id"]
+            predicted_sender_id = record["predicted_sender_id"]
+            predicted_recipient_id = record["predicted_recipient_id"]
+
+            sender_name = None
+            if sender_id and sender_id in agent_names:
+                sender_name = agent_names[sender_id]
+            elif predicted_sender_id and predicted_sender_id in agent_names:
+                sender_name = agent_names[predicted_sender_id]
+
+            recipient_name = None
+            if predicted_recipient_id and predicted_recipient_id in agent_names:
+                recipient_name = agent_names[predicted_recipient_id]
+
+            items.append(
+                DocumentHistoryRecord(
+                    document_id=record["document_id"],
+                    route_id=record["route_id"],
+                    document_created_at=record["document_created_at"],
+                    route_created_at=record["route_created_at"],
+                    sender_id=sender_id,
+                    sender_name=sender_name,
+                    route_status=record["route_status"],
+                    investigation_status=record["investigation_status"],
+                    document_name=record["document_name"],
+                    first_chunk_preview=record["first_chunk_preview"],
+                    recipient_id=predicted_recipient_id,
+                    recipient_name=recipient_name,
+                    prediction_confidence=record["prediction_confidence"],
+                    investigation_duration_seconds=record["investigation_duration_seconds"],
+                    manual_review_available=record["manual_review_available"],
                 )
             )
 
@@ -564,6 +627,23 @@ class DataStoreService(ADataStoreService):
             total_pages=routes_response.page_info.pages,
         )
         return PaginatedResult(items=items, meta=meta)
+
+    async def _fetch_agent_names(self, agent_ids: list[UUID]) -> dict[UUID, str]:
+        if not agent_ids:
+            return {}
+
+        names: dict[UUID, str] = {}
+
+        try:
+            response = await self._client.search_agents(page=1, page_size=len(agent_ids) + 1, ids=agent_ids)
+        except httpx.HTTPError as exc:
+            self._handle_http_error(exc, "Unable to fetch agents metadata")
+
+        for agent in response.items:
+            if agent.id in agent_ids and agent.id not in names:
+                names[agent.id] = agent.name
+
+        return names
 
     async def list_forwardings(
         self,
@@ -774,9 +854,21 @@ class DataStoreService(ADataStoreService):
         ]
         return RouteInvestigationData(status=result.status, forwards=forwards)
 
-    async def get_analytics_overview(self) -> AnalyticsOverviewData:
+    async def get_analytics_overview(
+        self,
+        *,
+        time_from: datetime | None = None,
+        time_to: datetime | None = None,
+        sender_id: UUID | None = None,
+        recipient_id: UUID | None = None,
+    ) -> AnalyticsOverviewData:
         try:
-            result = await self._client.get_analytics_overview()
+            result = await self._client.get_analytics_overview(
+                time_from=time_from,
+                time_to=time_to,
+                sender_id=sender_id,
+                recipient_id=recipient_id
+            )
         except httpx.HTTPError as exc:
             self._handle_http_error(exc, "Unable to fetch analytics overview")
 
@@ -798,9 +890,20 @@ class DataStoreService(ADataStoreService):
         *,
         window: AnalyticsTimeWindow,
         bucket_limit: int | None = None,
+        time_from: datetime | None = None,
+        time_to: datetime | None = None,
+        sender_id: UUID | None = None,
+        recipient_id: UUID | None = None,
     ) -> RoutesSummaryData:
         try:
-            result = await self._client.get_routes_summary(window=window, bucket_limit=bucket_limit)
+            result = await self._client.get_routes_summary(
+                window=window,
+                bucket_limit=bucket_limit,
+                time_from=time_from,
+                time_to=time_to,
+                sender_id=sender_id,
+                recipient_id=recipient_id,
+            )
         except httpx.HTTPError as exc:
             self._handle_http_error(exc, "Unable to fetch routes analytics summary")
 
@@ -819,9 +922,20 @@ class DataStoreService(ADataStoreService):
         *,
         window: AnalyticsTimeWindow,
         bucket_limit: int | None = None,
+        time_from: datetime | None = None,
+        time_to: datetime | None = None,
+        sender_id: UUID | None = None,
+        recipient_id: UUID | None = None,
     ) -> ForwardedSummaryData:
         try:
-            result = await self._client.get_forwarded_summary(window=window, bucket_limit=bucket_limit)
+            result = await self._client.get_forwarded_summary(
+                window=window,
+                bucket_limit=bucket_limit,
+                time_from=time_from,
+                time_to=time_to,
+                sender_id=sender_id,
+                recipient_id=recipient_id,
+            )
         except httpx.HTTPError as exc:
             self._handle_http_error(exc, "Unable to fetch forwarding analytics summary")
 
@@ -883,6 +997,7 @@ class DataStoreService(ADataStoreService):
             auto_acceptance_rate=overview.auto_acceptance_rate,
             manual_backlog_ratio=overview.manual_backlog_ratio,
             routes_coverage_ratio=overview.routes_coverage_ratio,
+            rejection_ratio=overview.rejection_ratio,
             distinct_recipients=overview.distinct_recipients,
             distinct_senders=overview.distinct_senders,
             average_score=overview.average_score,
@@ -891,6 +1006,7 @@ class DataStoreService(ADataStoreService):
             rejected_average_score=overview.rejected_average_score,
             first_forwarded_at=overview.first_forwarded_at,
             last_forwarded_at=overview.last_forwarded_at,
+            routes_distribution=overview.routes_distribution
         )
 
     def _map_forwarded_bucket(self, bucket: Any) -> ForwardedBucketData:
