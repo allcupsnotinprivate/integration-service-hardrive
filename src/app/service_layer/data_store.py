@@ -44,7 +44,21 @@ class AgentData:
 class DocumentSummaryData:
     id: UUID
     name: str | None
+    original_filename: str | None
+    content_type: str | None
+    file_size: int
+    download_url: str | None
     created_at: datetime
+
+
+@dataclass(slots=True)
+class DocumentCreatedData:
+    id: UUID
+    name: str | None
+    original_filename: str | None
+    content_type: str | None
+    file_size: int
+    download_url: str | None
 
 
 @dataclass(slots=True)
@@ -64,6 +78,7 @@ class DocumentHistoryRecord:
     prediction_confidence: float | None
     investigation_duration_seconds: float | None
     manual_review_available: bool
+    download_url: str | None
 
 
 @dataclass(slots=True)
@@ -226,6 +241,8 @@ class ADataStoreService(AService, abc.ABC):
         description: str | None,
         is_active: bool | None,
         is_default_recipient: bool | None,
+        is_sender: bool | None = None,
+        is_recipient: bool | None = None,
     ) -> PaginatedResult[AgentData]:
         raise NotImplementedError
 
@@ -252,7 +269,15 @@ class ADataStoreService(AService, abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    async def create_manual_document(self, *, name: str, content: str) -> UUID:
+    async def create_manual_document(
+        self,
+        *,
+        name: str | None,
+        content: str | None = None,
+        file_name: str | None = None,
+        file_content: bytes | None = None,
+        content_type: str | None = None,
+    ) -> DocumentCreatedData:
         raise NotImplementedError
 
     @abc.abstractmethod
@@ -392,6 +417,8 @@ class DataStoreService(ADataStoreService):
         description: str | None,
         is_active: bool | None,
         is_default_recipient: bool | None,
+        is_sender: bool | None = None,
+        is_recipient: bool | None = None,
     ) -> PaginatedResult[AgentData]:
         try:
             response = await self._client.search_agents(
@@ -401,6 +428,8 @@ class DataStoreService(ADataStoreService):
                 description=description,
                 is_active=is_active,
                 is_default_recipient=is_default_recipient,
+                is_sender=is_sender,
+                is_recipient=is_recipient,
             )
         except httpx.HTTPError as exc:
             self._handle_http_error(exc, "Unable to fetch agents")
@@ -465,7 +494,15 @@ class DataStoreService(ADataStoreService):
             self._handle_http_error(exc, "Unable to fetch documents")
 
         items = [
-            DocumentSummaryData(id=document.id, name=document.name, created_at=document.created_at)
+            DocumentSummaryData(
+                id=document.id,
+                name=document.name,
+                original_filename=document.original_filename,
+                content_type=document.content_type,
+                file_size=document.file_size,
+                download_url=str(document.download_url) if document.download_url else None,
+                created_at=document.created_at,
+            )
             for document in response.items
         ]
         meta = Pagination(
@@ -476,16 +513,57 @@ class DataStoreService(ADataStoreService):
         )
         return PaginatedResult(items=items, meta=meta)
 
-    async def create_manual_document(self, *, name: str, content: str) -> UUID:
-        normalized_name = name.strip()
-        normalized_content = content.strip()
-        if not normalized_name or not normalized_content:
-            raise exceptions.ValidationError("Name and content must not be empty")
+    async def create_manual_document(
+        self,
+        *,
+        name: str | None,
+        content: str | None = None,
+        file_name: str | None = None,
+        file_content: bytes | None = None,
+        content_type: str | None = None,
+    ) -> DocumentCreatedData:
+        normalized_name = name.strip() if name is not None else None
+        if normalized_name == "":
+            normalized_name = None
+
+        normalized_content = content.strip() if content is not None else None
+        if normalized_content == "":
+            normalized_content = None
+
+        has_file = file_content is not None and len(file_content) > 0
+        has_content = normalized_content is not None
+
+        if has_file and not file_name:
+            raise exceptions.ValidationError("Document file name must not be empty")
+
+        if not has_file and not has_content:
+            raise exceptions.ValidationError("Either document file or content must be provided")
+
+        if has_content and normalized_name is None:
+            raise exceptions.ValidationError("Document name must not be empty when submitting raw content")
+
+        payload_content = None if has_file else normalized_content
+        effective_name = normalized_name if normalized_name is not None else (file_name if has_file else None)
+
         try:
-            response = await self._client.admit_document(name=normalized_name, content=normalized_content)
+            response = await self._client.admit_document(
+                name=effective_name,
+                content=payload_content,
+                file_name=file_name if has_file else None,
+                file_content=file_content if has_file else None,
+                content_type=content_type if has_file else None,
+            )
         except httpx.HTTPError as exc:
             self._handle_http_error(exc, "Unable to create document")
-        return response.id
+
+        return DocumentCreatedData(
+            id=response.id,
+            name=response.name,
+            original_filename=response.original_filename,
+            content_type=response.content_type,
+            file_size=response.file_size,
+            download_url=str(response.download_url) if response.download_url else None,
+        )
 
     async def get_document_history(
         self,
@@ -580,6 +658,7 @@ class DataStoreService(ADataStoreService):
                         ProcessStatus.COMPLETED,
                         ProcessStatus.CANCELLED,
                     },
+                    "download_url": None,
                 }
             )
 
@@ -617,6 +696,7 @@ class DataStoreService(ADataStoreService):
                     prediction_confidence=record["prediction_confidence"],
                     investigation_duration_seconds=record["investigation_duration_seconds"],
                     manual_review_available=record["manual_review_available"],
+                    download_url=record["download_url"],
                 )
             )
 
@@ -864,10 +944,7 @@ class DataStoreService(ADataStoreService):
     ) -> AnalyticsOverviewData:
         try:
             result = await self._client.get_analytics_overview(
-                time_from=time_from,
-                time_to=time_to,
-                sender_id=sender_id,
-                recipient_id=recipient_id
+                time_from=time_from, time_to=time_to, sender_id=sender_id, recipient_id=recipient_id
             )
         except httpx.HTTPError as exc:
             self._handle_http_error(exc, "Unable to fetch analytics overview")
@@ -1006,7 +1083,9 @@ class DataStoreService(ADataStoreService):
             rejected_average_score=overview.rejected_average_score,
             first_forwarded_at=overview.first_forwarded_at,
             last_forwarded_at=overview.last_forwarded_at,
-            routes_distribution=overview.routes_distribution
+            routes_distribution=[
+                route_distribution.model_dump() for route_distribution in overview.routes_distribution
+            ],
         )
 
     def _map_forwarded_bucket(self, bucket: Any) -> ForwardedBucketData:

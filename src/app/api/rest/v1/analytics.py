@@ -30,7 +30,9 @@ async def get_analytics_overview(
     recipient_id: UUID | None = Query(default=None, alias="recipientId"),
     current_user: UserSchema = Depends(get_current_user),
 ) -> AnalyticsOverview:
-    overview = await data_store.get_analytics_overview(time_to=time_to, time_from=time_from, sender_id=sender_id, recipient_id=recipient_id)
+    overview = await data_store.get_analytics_overview(
+        time_to=time_to, time_from=time_from, sender_id=sender_id, recipient_id=recipient_id
+    )
     return AnalyticsOverview.model_validate(asdict(overview))
 
 
@@ -46,7 +48,14 @@ async def get_routes_summary(
     data_store: Injected[ADataStoreService] = Depends(),
     current_user: UserSchema = Depends(get_current_user),
 ) -> AnalyticsRoutesSummary:
-    summary = await data_store.get_routes_summary(window=window, bucket_limit=bucket_limit, time_to=time_to, time_from=time_from, sender_id=sender_id, recipient_id=recipient_id)
+    summary = await data_store.get_routes_summary(
+        window=window,
+        bucket_limit=bucket_limit,
+        time_to=time_to,
+        time_from=time_from,
+        sender_id=sender_id,
+        recipient_id=recipient_id,
+    )
     return AnalyticsRoutesSummary.model_validate(asdict(summary))
 
 
@@ -62,5 +71,12 @@ async def get_forwarded_summary(
     data_store: Injected[ADataStoreService] = Depends(),
     current_user: UserSchema = Depends(get_current_user),
 ) -> AnalyticsForwardedSummary:
-    summary = await data_store.get_forwarded_summary(window=window, bucket_limit=bucket_limit, time_to=time_to, time_from=time_from, sender_id=sender_id, recipient_id=recipient_id)
+    summary = await data_store.get_forwarded_summary(
+        window=window,
+        bucket_limit=bucket_limit,
+        time_to=time_to,
+        time_from=time_from,
+        sender_id=sender_id,
+        recipient_id=recipient_id,
+    )
     return AnalyticsForwardedSummary.model_validate(asdict(summary))

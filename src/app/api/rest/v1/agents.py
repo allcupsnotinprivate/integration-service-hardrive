@@ -28,6 +28,8 @@ async def list_agents(
     description: str | None = Query(default=None),
     is_active: bool | None = Query(default=None, alias="isActive"),
     is_default_recipient: bool | None = Query(default=None, alias="isDefaultRecipient"),
+    is_sender: bool | None = Query(default=None, alias="isSender"),
+    is_recipient: bool | None = Query(default=None, alias="isRecipient"),
     data_store: Injected[ADataStoreService] = Depends(),
     current_user: UserSchema = Depends(get_current_user),
 ) -> PaginatedResponse[AgentRecord]:
@@ -38,6 +40,8 @@ async def list_agents(
         description=description,
         is_active=is_active,
         is_default_recipient=is_default_recipient,
+        is_sender=is_sender,
+        is_recipient=is_recipient,
     )
 
     items = [

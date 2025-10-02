@@ -3,7 +3,7 @@ from uuid import UUID
 
 from aioinject import Injected
 from aioinject.ext.fastapi import inject
-from fastapi import APIRouter, Depends, HTTPException, Path, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Path, Query, UploadFile
 from starlette import status
 from starlette.responses import JSONResponse
 
@@ -18,7 +18,6 @@ from ._schemas import (
     DocumentHistoryItem,
     DocumentSummary,
     ForwardCreatedResponse,
-    ManualDocumentRequest,
     UserSchema,
 )
 
@@ -52,7 +51,16 @@ async def search_documents(
         created_to=created_to,
     )
     items = [
-        DocumentSummary(id=doc.id, name=doc.name, created_at=doc.created_at) for doc in documents_search_result.items
+        DocumentSummary(
+            id=doc.id,
+            name=doc.name,
+            original_filename=doc.original_filename,
+            content_type=doc.content_type,
+            file_size=doc.file_size,
+            file_url=doc.download_url,
+            created_at=doc.created_at,
+        )
+        for doc in documents_search_result.items
     ]
     meta = PageMeta(
         page=documents_search_result.meta.page,
@@ -66,14 +74,60 @@ async def search_documents(
 @router.post("/documents/manual", response_model=DocumentCreatedResponse, status_code=201)
 @inject
 async def admit_document(
-    payload: ManualDocumentRequest,
+    file: UploadFile | None = File(default=None, description="Document file to upload."),
+    name: str | None = Form(default=None, description="Optional display name for the uploaded document."),
+    content: str | None = Form(
+        default=None,
+        description="Raw document content if no file is provided. Ignored when a file is uploaded.",
+    ),
     data_store: Injected[ADataStoreService] = Depends(),
     current_user: UserSchema = Depends(get_current_user),
 ) -> DocumentCreatedResponse:
-    if not payload.name.strip() or not payload.content.strip():
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Name and content must not be empty")
-    document_id = await data_store.create_manual_document(name=payload.name, content=payload.content)
-    return DocumentCreatedResponse(id=document_id)
+    file_bytes: bytes | None = None
+    file_name: str | None = None
+    content_type: str | None = None
+
+    if file is not None:
+        file_bytes = await file.read()
+        await file.close()
+        if not file_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Uploaded file must not be empty.",
+            )
+        if not file.filename:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Uploaded file must include a filename.",
+            )
+        file_name = file.filename
+        content_type = file.content_type
+
+    normalized_content = content.strip() if content is not None else None
+    if normalized_content == "":
+        normalized_content = None
+
+    if file_bytes is None and normalized_content is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Either a document file or content must be provided.",
+        )
+
+    document = await data_store.create_manual_document(
+        name=name,
+        content=normalized_content,
+        file_name=file_name,
+        file_content=file_bytes,
+        content_type=content_type,
+    )
+    return DocumentCreatedResponse(
+        id=document.id,
+        name=document.name,
+        original_filename=document.original_filename,
+        content_type=document.content_type,
+        file_size=document.file_size,
+        file_url=document.download_url,
+    )
 
 
 @router.post("/documents/{documentId}/forwardings", response_model=ForwardCreatedResponse, status_code=201)
@@ -133,6 +187,7 @@ async def document_history(
             first_chunk_preview=record.first_chunk_preview,
             recipient_id=record.recipient_id,
             recipient_name=record.recipient_name,
+            file_url=record.download_url,
             prediction_confidence=record.prediction_confidence,
             investigation_duration_seconds=record.investigation_duration_seconds,
         )

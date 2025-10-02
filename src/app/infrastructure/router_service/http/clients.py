@@ -55,11 +55,21 @@ class ARouterServiceHTTPClient(abc.ABC):
         description: str | None = None,
         is_active: bool | None = None,
         is_default_recipient: bool | None = None,
+        is_sender: bool | None = None,
+        is_recipient: bool | None = None,
     ) -> AgentSearchResponse:
         raise NotImplementedError
 
     @abc.abstractmethod
-    async def admit_document(self, *, name: str, content: str) -> DocumentOut:
+    async def admit_document(
+        self,
+        *,
+        name: str | None = None,
+        content: str | None = None,
+        file_name: str | None = None,
+        file_content: bytes | None = None,
+        content_type: str | None = None,
+    ) -> DocumentOut:
         raise NotImplementedError
 
     @abc.abstractmethod
@@ -270,6 +280,8 @@ class RouterServiceHTTPClient(ARouterServiceHTTPClient):
         description: str | None = None,
         is_active: bool | None = None,
         is_default_recipient: bool | None = None,
+        is_sender: bool | None = None,
+        is_recipient: bool | None = None,
     ) -> AgentSearchResponse:
         response = await self._request(
             "GET",
@@ -283,17 +295,44 @@ class RouterServiceHTTPClient(ARouterServiceHTTPClient):
                     "description": description,
                     "isActive": is_active,
                     "isDefaultRecipient": is_default_recipient,
+                    "isSender": is_sender,
+                    "isRecipient": is_recipient,
                 }
             ),
         )
         return AgentSearchResponse.model_validate(response.json())
 
-    async def admit_document(self, *, name: str, content: str) -> DocumentOut:
-        response = await self._request(
-            "POST",
-            "/intakes/documents/admit",
-            json=self._prepare_payload({"name": name, "content": content}),
-        )
+    async def admit_document(
+        self,
+        *,
+        name: str | None = None,
+        content: str | None = None,
+        file_name: str | None = None,
+        file_content: bytes | None = None,
+        content_type: str | None = None,
+    ) -> DocumentOut:
+        payload = self._prepare_payload({"name": name, "content": content})
+
+        if file_content is not None:
+            files = {
+                "file": (
+                    file_name or "document",
+                    file_content,
+                    content_type or "application/octet-stream",
+                )
+            }
+            response = await self._request(
+                "POST",
+                "/intakes/documents/admit",
+                data=payload if payload else None,
+                files=files,
+            )
+        else:
+            response = await self._request(
+                "POST",
+                "/intakes/documents/admit",
+                json=payload,
+            )
         return DocumentOut.model_validate(response.json())
 
     async def search_documents(
@@ -535,7 +574,16 @@ class RouterServiceHTTPClient(ARouterServiceHTTPClient):
         response = await self._request(
             "GET",
             "/analytics/routes/summary",
-            params=self._prepare_payload({"window": window, "bucketLimit": bucket_limit, "timeFrom": time_from, "timeTo": time_to, "senderId": sender_id, "recipientId": recipient_id}),
+            params=self._prepare_payload(
+                {
+                    "window": window,
+                    "bucketLimit": bucket_limit,
+                    "timeFrom": time_from,
+                    "timeTo": time_to,
+                    "senderId": sender_id,
+                    "recipientId": recipient_id,
+                }
+            ),
         )
         return RoutesSummaryOut.model_validate(response.json())
 
@@ -552,7 +600,16 @@ class RouterServiceHTTPClient(ARouterServiceHTTPClient):
         response = await self._request(
             "GET",
             "/analytics/routes/predictions",
-            params=self._prepare_payload({"window": window, "bucketLimit": bucket_limit, "timeFrom": time_from, "timeTo": time_to, "senderId": sender_id, "recipientId": recipient_id}),
+            params=self._prepare_payload(
+                {
+                    "window": window,
+                    "bucketLimit": bucket_limit,
+                    "timeFrom": time_from,
+                    "timeTo": time_to,
+                    "senderId": sender_id,
+                    "recipientId": recipient_id,
+                }
+            ),
         )
         return ForwardedSummaryOut.model_validate(response.json())
 
@@ -563,6 +620,8 @@ class RouterServiceHTTPClient(ARouterServiceHTTPClient):
         *,
         params: dict[str, Any] | None = None,
         json: dict[str, Any] | None = None,
+        data: dict[str, Any] | None = None,
+        files: dict[str, Any] | None = None,
     ) -> httpx.Response:
         url = f"{self._base_url}{path}"
         async for attempt in self._retrying():
@@ -572,6 +631,8 @@ class RouterServiceHTTPClient(ARouterServiceHTTPClient):
                     url,
                     params=params,
                     json=json,
+                    data=data,
+                    files=files,
                 )
                 response.raise_for_status()
                 return response

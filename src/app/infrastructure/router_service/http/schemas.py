@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AnyUrl, BaseModel, ConfigDict, Field
 
 
 class BaseSchema(BaseModel):
@@ -35,11 +35,20 @@ class PageMeta(BaseSchema):
 
 class DocumentOut(BaseSchema):
     id: UUID = Field()
+    name: str | None = Field(default=None)
+    original_filename: str | None = Field(default=None, alias="originalFilename")
+    content_type: str | None = Field(default=None, alias="contentType")
+    file_size: int = Field(default=0, alias="fileSize")
+    download_url: AnyUrl | None = Field(default=None, alias="downloadUrl")
 
 
 class DocumentRead(BaseSchema):
     id: UUID = Field()
     name: str | None = Field(default=None)
+    original_filename: str | None = Field(default=None, alias="originalFilename")
+    content_type: str | None = Field(default=None, alias="contentType")
+    file_size: int = Field(default=0, alias="fileSize")
+    download_url: AnyUrl | None = Field(default=None, alias="downloadUrl")
     created_at: datetime = Field(alias="createdAt")
 
 
@@ -191,8 +200,8 @@ class RoutesSummaryOut(BaseSchema):
 class ForwardedRecipientDistributionResponse(BaseSchema):
     recipient_id: UUID | None = Field(default=None, alias="recipientId")
     recipient_name: str | None = Field(default=None, alias="recipientName")
-    routes: int = Field(default=-1)
-    percentage: float = Field(default=0)
+    routes: int = Field()
+    percentage: float = Field()
 
 
 class ForwardedOverviewOut(BaseSchema):
@@ -218,7 +227,9 @@ class ForwardedOverviewOut(BaseSchema):
     rejected_average_score: float | None = Field(default=None, alias="rejectedAverageScore")
     first_forwarded_at: datetime | None = Field(default=None, alias="firstForwardedAt")
     last_forwarded_at: datetime | None = Field(default=None, alias="lastForwardedAt")
-    routes_distribution: list[ForwardedRecipientDistributionResponse] = Field(default_factory=list)
+    routes_distribution: list[ForwardedRecipientDistributionResponse] = Field(
+        default_factory=list, alias="routesDistribution"
+    )
 
 
 class ForwardedBucketOut(BaseSchema):
